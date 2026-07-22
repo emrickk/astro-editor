@@ -11,6 +11,9 @@ interface StringFieldProps extends FieldProps {
   placeholder?: string
   type?: 'text' | 'email' | 'url'
   field?: SchemaField
+  /** Existing values from the collection, offered as a dropdown while
+   *  keeping free entry (rendered as a datalist). */
+  suggestions?: string[]
 }
 
 export const StringField: React.FC<StringFieldProps> = ({
@@ -21,6 +24,7 @@ export const StringField: React.FC<StringFieldProps> = ({
   required,
   type = 'text',
   field,
+  suggestions,
 }) => {
   const value = useEditorStore(state => getNestedValue(state.frontmatter, name))
   const updateFrontmatterField = useEditorStore(
@@ -45,7 +49,19 @@ export const StringField: React.FC<StringFieldProps> = ({
         className={className}
         value={valueToString(value)}
         onChange={e => updateFrontmatterField(name, e.target.value)}
+        list={
+          suggestions && suggestions.length > 0
+            ? `${name}-suggestions`
+            : undefined
+        }
       />
+      {suggestions && suggestions.length > 0 && (
+        <datalist id={`${name}-suggestions`}>
+          {suggestions.map(suggestion => (
+            <option key={suggestion} value={suggestion} />
+          ))}
+        </datalist>
+      )}
     </FieldWrapper>
   )
 }

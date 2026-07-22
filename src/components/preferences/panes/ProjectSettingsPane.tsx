@@ -60,7 +60,8 @@ export const ProjectSettingsPane: React.FC = () => {
       | 'pullCommand'
       | 'publishPreflightCommand'
       | 'publishReviewCommand'
-      | 'publishConfirmCommand',
+      | 'publishConfirmCommand'
+      | 'coverImagesDirectory',
     value: string
   ) => {
     void updateProject({
@@ -192,6 +193,26 @@ export const ProjectSettingsPane: React.FC = () => {
               and whatever it prints to stdout is inserted at the cursor (for
               example a markdown snippet pointing at a CDN URL). Leave empty
               to keep the default copy-to-assets behaviour.
+            </FieldDescription>
+          </FieldContent>
+        </Field>
+      </SettingsSection>
+
+      <SettingsSection title="Covers">
+        <Field>
+          <FieldLabel>Cover Images Directory</FieldLabel>
+          <FieldContent>
+            <PreferencesTextInput
+              value={currentProjectSettings?.coverImagesDirectory || ''}
+              onCommit={value =>
+                handleCommandChange('coverImagesDirectory', value)
+              }
+              placeholder="src/assets/hero"
+            />
+            <FieldDescription>
+              Where images picked with &quot;From Post&quot; get downloaded
+              (relative to the project root, organized by year/month). Empty
+              uses the assets directory plus the collection name.
             </FieldDescription>
           </FieldContent>
         </Field>

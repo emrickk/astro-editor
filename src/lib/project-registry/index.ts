@@ -258,6 +258,7 @@ export class ProjectRegistryManager {
     // Update optional command settings if present (undefined removes them)
     const OPTIONAL_COMMAND_KEYS = [
       'imageDropCommand',
+      'coverImagesDirectory',
       'pullCommand',
       'publishPreflightCommand',
       'publishReviewCommand',

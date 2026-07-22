@@ -47,14 +47,18 @@ const mockProjectRegistryManager = {
   }),
 }
 
-vi.mock('../lib/project-registry', () => ({
-  projectRegistryManager: mockProjectRegistryManager,
-  ProjectRegistryManager: vi
-    .fn()
-    .mockImplementation(() => mockProjectRegistryManager),
-  GlobalSettings: {},
-  ProjectSettings: {},
-}))
+vi.mock('../lib/project-registry', async importOriginal => {
+  // Keep the module's pure helpers (getEffectiveContentDirectory,
+  // getCollectionSettings, defaults) real; mock only the manager singleton.
+  const actual = await importOriginal<object>()
+  return {
+    ...actual,
+    projectRegistryManager: mockProjectRegistryManager,
+    ProjectRegistryManager: vi
+      .fn()
+      .mockImplementation(() => mockProjectRegistryManager),
+  }
+})
 
 // Make mocks available globally for tests
 globalThis.mockTauri = {

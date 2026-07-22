@@ -43,6 +43,9 @@ export interface ProjectSettings {
   // image path appended as one argument; its stdout is inserted at the
   // cursor (e.g. a markdown snippet pointing at a CDN URL).
   imageDropCommand?: string
+  // Directory (relative to project root) where cover images picked from a
+  // post's remote images get downloaded (default: assets dir + collection)
+  coverImagesDirectory?: string
   // Shell command for the Pull action (default: git pull --ff-only)
   pullCommand?: string
   // Publish pipeline (all run from the project root, see src/lib/publish.ts):

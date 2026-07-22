@@ -12,6 +12,7 @@ import { ArrayField } from './ArrayField'
 import { ReferenceField } from './ReferenceField'
 import { YamlField } from './YamlField'
 import { ImageField } from './ImageField'
+import { useFieldSuggestions } from '../../../hooks/useFieldSuggestions'
 
 interface FrontmatterFieldProps {
   name: string
@@ -28,6 +29,8 @@ export const FrontmatterField: React.FC<FrontmatterFieldProps> = ({
 }) => {
   const fieldValue = useEditorStore(state => state.frontmatter?.[name])
   const { frontmatterMappings } = useEffectiveSettings(collectionName)
+  // Existing collection values for categorical string fields (e.g. category)
+  const suggestions = useFieldSuggestions(name)
 
   // Determine field properties from SchemaField
   let fieldType: string
@@ -238,6 +241,12 @@ export const FrontmatterField: React.FC<FrontmatterFieldProps> = ({
 
   // Default to string field
   return (
-    <StringField name={name} label={label} required={required} field={field} />
+    <StringField
+      name={name}
+      label={label}
+      required={required}
+      field={field}
+      suggestions={suggestions}
+    />
   )
 }

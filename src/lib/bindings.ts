@@ -412,6 +412,20 @@ async runImageDropCommand(command: string, imagePath: string, projectPath: strin
 }
 },
 /**
+ * Downloads an image over https to a destination inside the project and
+ * returns the absolute destination path. Used by the cover picker to bring
+ * one of a post's remote (CDN) images into the repo's assets, where a
+ * build-time-optimized cover must live.
+ */
+async downloadImageToProject(url: string, destPath: string, projectPath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("download_image_to_project", { url, destPath, projectPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Runs a project-level command (pull, publish preflight, publish confirm)
  * from the project root, streaming each merged stdout/stderr line to the
  * frontend as a `project-command-log` event and returning the full output.
@@ -428,8 +442,8 @@ async runProjectCommand(command: string, projectPath: string) : Promise<Result<s
 /**
  * Starts a long-running review server (e.g. a production preview) in its
  * own process group and returns the group leader's pid. The caller stops it
- * with `stop_review_server`. Output is discarded; the server is expected to
- * open the review page itself when ready.
+ * with `stop_review_server`. Each output line streams to the frontend as a
+ * `review-server-log` event so the UI can show build progress and readiness.
  */
 async startReviewServer(command: string, projectPath: string) : Promise<Result<number, string>> {
     try {

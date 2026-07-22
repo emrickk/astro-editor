@@ -13,7 +13,11 @@ import {
 } from '../../ui/input-group'
 import { processFileToAssets, IMAGE_EXTENSIONS } from '../../../lib/files'
 import { getCollectionSettings } from '../../../lib/project-registry'
-import { X, Loader2, Edit3, Check } from 'lucide-react'
+import { coverDestinationFor } from '../../../lib/images'
+import { commands } from '@/types'
+import { Button } from '../../ui/button'
+import { PostImagePickerDialog } from './PostImagePickerDialog'
+import { X, Loader2, Edit3, Check, Images } from 'lucide-react'
 import type { FieldProps } from '../../../types/common'
 import type { SchemaField } from '../../../lib/schema'
 
@@ -34,6 +38,7 @@ export const ImageField: React.FC<ImageFieldProps> = ({
   const [isLoading, setIsLoading] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const stringValue = typeof value === 'string' ? value : ''
   // When editing, show edit value; otherwise show current value
@@ -101,6 +106,50 @@ export const ImageField: React.FC<ImageFieldProps> = ({
         })
       )
     } finally {
+      setIsLoading(false)
+    }
+  }
+
+  /**
+   * Cover from a post image: download the remote image into the project's
+   * cover directory (yyyy/mm mirrors the CDN key), then run it through the
+   * normal selection flow, which uses in-project files in place.
+   */
+  const handlePostImageSelect = async (url: string) => {
+    setPickerOpen(false)
+    const { projectPath, currentProjectSettings } = useProjectStore.getState()
+    const { currentFile } = useEditorStore.getState()
+    if (!projectPath || !currentFile) return
+    setIsLoading(true)
+    try {
+      const effectiveSettings = getCollectionSettings(
+        currentProjectSettings,
+        currentFile.collection
+      )
+      const coverDir =
+        currentProjectSettings?.coverImagesDirectory?.trim() ||
+        `${effectiveSettings.pathOverrides.assetsDirectory.replace(/\/+$/, '')}/${currentFile.collection}`
+      const dest = coverDestinationFor(url, coverDir)
+      const result = await commands.downloadImageToProject(
+        url,
+        dest,
+        projectPath
+      )
+      if (result.status === 'error') {
+        throw new Error(result.error)
+      }
+      await handleFileSelect(result.data)
+    } catch (error) {
+      window.dispatchEvent(
+        new CustomEvent('toast', {
+          detail: {
+            title: 'Failed to use post image',
+            description:
+              error instanceof Error ? error.message : 'Unknown error',
+            variant: 'destructive',
+          },
+        })
+      )
       setIsLoading(false)
     }
   }
@@ -209,15 +258,33 @@ export const ImageField: React.FC<ImageFieldProps> = ({
           </InputGroup>
         )}
 
-        {/* File upload button - above preview */}
-        <FileUploadButton
-          accept={[...IMAGE_EXTENSIONS]}
-          onFileSelect={handleFileSelect}
-          disabled={isLoading}
-        >
-          {isLoading && <Loader2 className="mr-2 size-4 animate-spin" />}
-          {stringValue ? 'Change Image' : 'Select Image'}
-        </FileUploadButton>
+        {/* File upload + from-post buttons - above preview */}
+        <div className="flex items-center gap-2">
+          <FileUploadButton
+            accept={[...IMAGE_EXTENSIONS]}
+            onFileSelect={handleFileSelect}
+            disabled={isLoading}
+          >
+            {isLoading && <Loader2 className="mr-2 size-4 animate-spin" />}
+            {stringValue ? 'Change Image' : 'Select Image'}
+          </FileUploadButton>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isLoading}
+            onClick={() => setPickerOpen(true)}
+            title="Choose one of the images already in this post"
+          >
+            <Images className="mr-1.5 size-4" />
+            From Post
+          </Button>
+        </div>
+        <PostImagePickerDialog
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          onSelect={url => void handlePostImageSelect(url)}
+        />
 
         {/* Preview - always shown when stringValue exists, never hidden during editing */}
         {stringValue && <ImageThumbnail path={stringValue} />}

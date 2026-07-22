@@ -56,6 +56,7 @@ import { hangingHeadersExtension } from './hanging-headers'
 import { syntaxMarkDecorationsExtension } from './syntax-mark-decorations'
 import { codeBlockBackgroundExtension } from './code-block-background'
 import { blockquoteStyleExtension } from './blockquote-style'
+import { imagePreview } from './image-preview'
 
 /**
  * Configuration for creating editor extensions
@@ -94,6 +95,9 @@ export const createExtensions = (config: ExtensionConfig) => {
     }),
     syntaxHighlighting(comprehensiveHighlightStyle),
     history(),
+
+    // Inline thumbnails under lines that reference images
+    imagePreview(),
 
     // Keymaps
     ...createKeymapExtensions(keymapHandlers),
