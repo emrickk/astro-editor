@@ -52,6 +52,10 @@ export interface ProjectSettings {
   publishReviewCommand?: string
   // runs on approval; `{digest}` is replaced with the preflight token
   publishConfirmCommand?: string
+  // One-click publish: skip the confirmation dialog and review server and
+  // run the confirm command immediately after a successful preflight, with
+  // progress in a toast. Failures still open the error dialog.
+  publishAutoConfirm?: boolean
   // Collection-specific settings overrides
   collections?: CollectionSettings[]
 }

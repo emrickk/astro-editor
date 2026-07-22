@@ -68,6 +68,12 @@ export const ProjectSettingsPane: React.FC = () => {
     })
   }
 
+  const handleAutoConfirmChange = (checked: boolean) => {
+    void updateProject({
+      publishAutoConfirm: checked || undefined, // Remove when off
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg border bg-muted/50 p-4 mb-6">
@@ -244,6 +250,24 @@ export const ProjectSettingsPane: React.FC = () => {
               your decision.
             </FieldDescription>
           </FieldContent>
+        </Field>
+
+        <Field>
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <FieldLabel>One-Click Publish</FieldLabel>
+              <FieldDescription>
+                Skip the confirmation dialog and review server: clicking
+                Publish runs the pipeline immediately after a successful
+                preflight, with progress shown in a toast. All automated
+                checks still run, and failures still open a dialog.
+              </FieldDescription>
+            </div>
+            <Switch
+              checked={currentProjectSettings?.publishAutoConfirm ?? false}
+              onCheckedChange={handleAutoConfirmChange}
+            />
+          </div>
         </Field>
 
         <Field>

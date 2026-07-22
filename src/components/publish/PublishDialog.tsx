@@ -24,6 +24,7 @@ import { usePublishStore, SHIP_PHASES } from '../../store/publishStore'
  */
 export function PublishDialog() {
   const stage = usePublishStore(state => state.stage)
+  const autoMode = usePublishStore(state => state.autoMode)
   const files = usePublishStore(state => state.files)
   const digest = usePublishStore(state => state.digest)
   const reviewReady = usePublishStore(state => state.reviewReady)
@@ -35,7 +36,12 @@ export function PublishDialog() {
   const cancelReview = usePublishStore(state => state.cancelReview)
   const dismissError = usePublishStore(state => state.dismissError)
 
-  const open = stage === 'review' || stage === 'shipping' || stage === 'error'
+  // One-click mode ships without a dialog (progress lives in a toast);
+  // only failures surface here.
+  const open =
+    stage === 'review' ||
+    stage === 'error' ||
+    (stage === 'shipping' && !autoMode)
   if (!open) return null
 
   const handleOpenChange = (next: boolean) => {

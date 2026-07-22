@@ -45,6 +45,8 @@ interface PublishState {
   shipPhase: number
   /** Repo-relative paths the publish is scoped to ({files} expansion) */
   scopedFiles: string[] | null
+  /** One-click mode: no dialog while shipping, progress in a toast */
+  autoMode: boolean
   log: string[]
   error: string | null
 }
@@ -66,6 +68,7 @@ const initialState: PublishState = {
   reviewProgress: null,
   shipPhase: 0,
   scopedFiles: null,
+  autoMode: false,
   log: [],
   error: null,
 }
@@ -266,6 +269,24 @@ export const usePublishStore = create<PublishState & PublishActions>(
           return
         }
 
+        // One-click mode: no review server, no confirmation dialog; ship
+        // immediately with progress in the toast. The automated gates
+        // (purity, freshness, release checks) all still run.
+        if (currentProjectSettings?.publishAutoConfirm) {
+          set({
+            files: preflight.files,
+            digest: preflight.digest,
+            scopedFiles,
+            autoMode: true,
+          })
+          toast.loading('Publishing…', {
+            id: 'publish',
+            description: `${preflight.files.length} file(s)`,
+          })
+          await get().approveAndShip()
+          return
+        }
+
         toast.dismiss('publish')
         let reviewPid: number | null = null
         const reviewCommand =
@@ -317,8 +338,9 @@ export const usePublishStore = create<PublishState & PublishActions>(
     },
 
     approveAndShip: async () => {
-      const { stage, digest, reviewPid, scopedFiles } = get()
-      if (stage !== 'review' || !digest) return
+      const { stage, digest, reviewPid, scopedFiles, autoMode } = get()
+      // 'review' is the dialog's approve; 'preflight' is the one-click path
+      if ((stage !== 'review' && stage !== 'preflight') || !digest) return
       const { projectPath, currentProjectSettings } =
         useProjectStore.getState()
       const confirmTemplate =
@@ -346,6 +368,13 @@ export const usePublishStore = create<PublishState & PublishActions>(
                 shipPhase: phase,
               }
             })
+            if (autoMode) {
+              const { shipPhase } = get()
+              toast.loading(`Publishing… ${SHIP_PHASES[shipPhase]}`, {
+                id: 'publish',
+                description: line.trim().slice(0, 120),
+              })
+            }
           },
           async () => {
             const result = await commands.runProjectCommand(
@@ -364,6 +393,7 @@ export const usePublishStore = create<PublishState & PublishActions>(
               .find(line => /pushed|deploy complete/i.test(line))
             const summary = highlight ?? lines.at(-1) ?? 'done'
             toast.success('Published', {
+              id: 'publish',
               description: summary.slice(0, 140),
               duration: 10000,
             })
@@ -372,6 +402,7 @@ export const usePublishStore = create<PublishState & PublishActions>(
           }
         )
       } catch (error) {
+        toast.dismiss('publish')
         set({
           stage: 'error',
           error: error instanceof Error ? error.message : 'Unknown error',

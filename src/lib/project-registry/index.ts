@@ -246,6 +246,15 @@ export class ProjectRegistryManager {
       }
     }
 
+    // Update publishAutoConfirm if property is present
+    if ('publishAutoConfirm' in settings) {
+      if (settings.publishAutoConfirm === undefined) {
+        delete projectData.settings.publishAutoConfirm
+      } else {
+        projectData.settings.publishAutoConfirm = settings.publishAutoConfirm
+      }
+    }
+
     // Update optional command settings if present (undefined removes them)
     const OPTIONAL_COMMAND_KEYS = [
       'imageDropCommand',
