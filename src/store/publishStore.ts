@@ -19,11 +19,26 @@ export type PublishStage =
   | 'shipping'
   | 'error'
 
+/** Coarse publish pipeline phases, advanced by known output markers. A
+ *  pipeline that prints none of them simply stays on the first phase. */
+export const SHIP_PHASES = [
+  'Freshness check',
+  'Release checks',
+  'Commit and push',
+  'Deploy',
+] as const
+
 interface PublishState {
   stage: PublishStage
   files: string[]
   digest: string | null
   reviewPid: number | null
+  /** Review server readiness, derived from its output */
+  reviewReady: boolean
+  /** Last line of review server output (build progress) */
+  reviewProgress: string | null
+  /** Index into SHIP_PHASES while shipping */
+  shipPhase: number
   log: string[]
   error: string | null
 }
@@ -41,11 +56,33 @@ const initialState: PublishState = {
   files: [],
   digest: null,
   reviewPid: null,
+  reviewReady: false,
+  reviewProgress: null,
+  shipPhase: 0,
   log: [],
   error: null,
 }
 
 const MAX_LOG_LINES = 200
+
+/** Output markers that advance the shipping phase indicator */
+const PHASE_MARKERS: Array<{ pattern: RegExp; phase: number }> = [
+  { pattern: /running release checks/i, phase: 1 },
+  { pattern: /VERDICT: GO/, phase: 2 },
+  { pattern: /^pushed \w+/i, phase: 3 },
+]
+
+/** The review server is considered ready once it prints its page or URL */
+const REVIEW_READY_RE = /review page:|https?:\/\/localhost/i
+
+// Review server log subscription lives for the whole review stage, outside
+// any single command run, so it is tracked at module level.
+let reviewLogUnlisten: UnlistenFn | null = null
+
+function stopReviewLogListener(): void {
+  reviewLogUnlisten?.()
+  reviewLogUnlisten = null
+}
 
 /** Streams `project-command-log` events into a callback for the duration of
  *  one command run. */
@@ -177,6 +214,19 @@ export const usePublishStore = create<PublishState & PublishActions>(
         const reviewCommand =
           currentProjectSettings?.publishReviewCommand?.trim()
         if (reviewCommand) {
+          // Subscribe before starting so early output lines are not missed
+          stopReviewLogListener()
+          reviewLogUnlisten = await listen<{ line: string }>(
+            'review-server-log',
+            event => {
+              const line = event.payload.line.trim()
+              if (!line) return
+              set(state => ({
+                reviewProgress: line,
+                reviewReady: state.reviewReady || REVIEW_READY_RE.test(line),
+              }))
+            }
+          )
           const server = await commands.startReviewServer(
             reviewCommand,
             projectPath
@@ -192,15 +242,20 @@ export const usePublishStore = create<PublishState & PublishActions>(
           files: preflight.files,
           digest: preflight.digest,
           reviewPid,
+          // No review server configured means there is nothing to wait for
+          reviewReady: !reviewCommand,
         })
       } catch (error) {
-        toast.error('Publish preflight failed', {
-          id: 'publish',
-          description:
-            error instanceof Error ? error.message : 'Unknown error',
-          duration: 12000,
+        // The pipeline's own refusal (branch not clean, non-post changes,
+        // origin ahead) lands here too; the dialog renders it with line
+        // breaks intact, which a toast cannot.
+        stopReviewLogListener()
+        toast.dismiss('publish')
+        set({
+          ...initialState,
+          stage: 'error',
+          error: error instanceof Error ? error.message : 'Unknown error',
         })
-        set({ ...initialState })
       }
     },
 
@@ -213,7 +268,8 @@ export const usePublishStore = create<PublishState & PublishActions>(
         currentProjectSettings?.publishConfirmCommand?.trim()
       if (!projectPath || !confirmTemplate) return
 
-      set({ stage: 'shipping', log: [], error: null })
+      set({ stage: 'shipping', log: [], error: null, shipPhase: 0 })
+      stopReviewLogListener()
       await stopReviewServer(reviewPid)
       set({ reviewPid: null })
 
@@ -221,9 +277,18 @@ export const usePublishStore = create<PublishState & PublishActions>(
         await withCommandLog(
           line => {
             if (!line.trim()) return
-            set(state => ({
-              log: [...state.log.slice(-(MAX_LOG_LINES - 1)), line],
-            }))
+            set(state => {
+              let phase = state.shipPhase
+              for (const marker of PHASE_MARKERS) {
+                if (marker.phase > phase && marker.pattern.test(line)) {
+                  phase = marker.phase
+                }
+              }
+              return {
+                log: [...state.log.slice(-(MAX_LOG_LINES - 1)), line],
+                shipPhase: phase,
+              }
+            })
           },
           async () => {
             const result = await commands.runProjectCommand(
@@ -256,11 +321,13 @@ export const usePublishStore = create<PublishState & PublishActions>(
 
     cancelReview: async () => {
       const { reviewPid } = get()
+      stopReviewLogListener()
       await stopReviewServer(reviewPid)
       set({ ...initialState })
     },
 
     dismissError: () => {
+      stopReviewLogListener()
       set({ ...initialState })
     },
   })

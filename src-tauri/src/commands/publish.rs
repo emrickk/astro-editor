@@ -105,11 +105,23 @@ pub async fn run_project_command(
 
 /// Starts a long-running review server (e.g. a production preview) in its
 /// own process group and returns the group leader's pid. The caller stops it
-/// with `stop_review_server`. Output is discarded; the server is expected to
-/// open the review page itself when ready.
+/// with `stop_review_server`. Each output line streams to the frontend as a
+/// `review-server-log` event so the UI can show build progress and readiness.
 #[tauri::command]
 #[specta::specta]
-pub async fn start_review_server(command: String, project_path: String) -> Result<u32, String> {
+pub async fn start_review_server(
+    app: tauri::AppHandle,
+    command: String,
+    project_path: String,
+) -> Result<u32, String> {
+    start_review_server_inner(Some(app), command, project_path)
+}
+
+fn start_review_server_inner(
+    app: Option<tauri::AppHandle>,
+    command: String,
+    project_path: String,
+) -> Result<u32, String> {
     if command.trim().is_empty() {
         return Err("Command is empty".to_string());
     }
@@ -118,8 +130,8 @@ pub async fn start_review_server(command: String, project_path: String) -> Resul
 
     let mut cmd = command_for(command.trim(), &project_path);
     cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -129,6 +141,24 @@ pub async fn start_review_server(command: String, project_path: String) -> Resul
         .spawn()
         .map_err(|e| format!("Failed to start review server: {e}"))?;
     let pid = child.id();
+
+    let stdout = child.stdout.take().expect("stdout piped");
+    let stderr = child.stderr.take().expect("stderr piped");
+    let app_out = app.clone();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if let Some(app) = &app_out {
+                let _ = app.emit("review-server-log", CommandLogLine { line });
+            }
+        }
+    });
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if let Some(app) = &app {
+                let _ = app.emit("review-server-log", CommandLogLine { line });
+            }
+        }
+    });
 
     // Reap the child when it exits so it never lingers as a zombie.
     std::thread::spawn(move || {
@@ -174,11 +204,11 @@ mod tests {
     #[tokio::test]
     async fn start_and_stop_review_server_kills_process_group() {
         let dir = std::env::temp_dir();
-        let pid = start_review_server(
+        let pid = start_review_server_inner(
+            None,
             "sleep 300".to_string(),
             dir.to_string_lossy().to_string(),
         )
-        .await
         .unwrap();
         assert!(pid > 0);
         stop_review_server(pid).await.unwrap();
@@ -197,9 +227,12 @@ mod tests {
     async fn stop_review_server_tolerates_already_gone() {
         // A pid from a process that exited immediately.
         let dir = std::env::temp_dir();
-        let pid = start_review_server("true".to_string(), dir.to_string_lossy().to_string())
-            .await
-            .unwrap();
+        let pid = start_review_server_inner(
+            None,
+            "true".to_string(),
+            dir.to_string_lossy().to_string(),
+        )
+        .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(300));
         stop_review_server(pid).await.unwrap();
     }
