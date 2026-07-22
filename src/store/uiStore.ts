@@ -44,7 +44,9 @@ interface UIState {
 }
 
 const DEFAULT_VIEW_STATE: CollectionViewState = {
-  sortMode: 'default',
+  // 'modified' (file mtime, newest first): what you last touched is what
+  // you most likely want next, and it needs no schema date field.
+  sortMode: 'modified',
   sortDirection: 'desc',
   searchQuery: '',
   filterBarExpanded: false,
@@ -198,7 +200,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       get().draftFilterByCollection[collectionName] || false
     return (
       viewState.searchQuery.trim() !== '' ||
-      viewState.sortMode !== 'default' ||
+      viewState.sortMode !== DEFAULT_VIEW_STATE.sortMode ||
       showDraftsOnly
     )
   },
