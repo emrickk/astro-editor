@@ -220,7 +220,10 @@ export const ProjectSettingsPane: React.FC = () => {
               Computes the change set before publishing. Must print a
               &quot;changeset digest: &lt;token&gt;&quot; line; a non-zero
               exit aborts with its own explanation. Publishing is enabled
-              only when this and the confirm command are set.
+              only when this and the confirm command are set. Include
+              {' {files}'} to scope the publish to the currently open post
+              and its translation siblings (repo-relative paths; a flag
+              directly before it is repeated per file).
             </FieldDescription>
           </FieldContent>
         </Field>
@@ -256,7 +259,8 @@ export const ProjectSettingsPane: React.FC = () => {
             <FieldDescription>
               Runs after you approve; {'{digest}'} is replaced with the
               preflight token so the pipeline can verify nothing changed
-              since the review.
+              since the review, and {'{files}'} with the same scoped paths
+              as the preflight command.
             </FieldDescription>
           </FieldContent>
         </Field>

@@ -11,6 +11,10 @@
  *    changes (long-running; the editor stops it after the decision).
  * 3. `publishConfirmCommand` runs on approval, with `{digest}` replaced by
  *    the preflight token so the pipeline can verify freshness.
+ *
+ * Commands may also contain `{files}`: it expands to the repo-relative
+ * paths of the currently open post and its existing translation siblings,
+ * shell-quoted, so a pipeline can scope the publish to just that post.
  */
 
 export const DEFAULT_PULL_COMMAND = 'git pull --ff-only'
@@ -44,7 +48,40 @@ export function parsePreflightOutput(output: string): PreflightResult {
   return { digest, files, empty: digest === null }
 }
 
-/** Substitutes the `{digest}` placeholder in a confirm command. */
-export function confirmCommandFor(template: string, digest: string): string {
-  return template.replaceAll('{digest}', digest)
+/** Quotes a path for safe interpolation into a POSIX shell command line. */
+export function shellQuote(path: string): string {
+  return `'${path.replaceAll("'", `'\\''`)}'`
+}
+
+/** True when the template scopes the publish to specific files. */
+export function commandWantsFiles(template: string | undefined): boolean {
+  return Boolean(template?.includes('{files}'))
+}
+
+/**
+ * Substitutes command placeholders: `{digest}` with the preflight token,
+ * `{files}` with the shell-quoted, space-joined scoped file paths. When
+ * `{files}` directly follows an option flag, the flag is repeated for each
+ * file (`--only {files}` becomes `--only 'a' --only 'b'`), matching
+ * parseArgs-style multiple options.
+ */
+export function expandPublishCommand(
+  template: string,
+  { digest, files }: { digest?: string; files?: string[] }
+): string {
+  let command = template
+  if (digest !== undefined) {
+    command = command.replaceAll('{digest}', digest)
+  }
+  if (files !== undefined) {
+    const quoted = files.map(shellQuote)
+    command = command.replace(
+      /(--?[\w-]+)\s+\{files\}|\{files\}/g,
+      (_match, flag: string | undefined) =>
+        flag
+          ? quoted.map(f => `${flag} ${f}`).join(' ')
+          : quoted.join(' ')
+    )
+  }
+  return command
 }

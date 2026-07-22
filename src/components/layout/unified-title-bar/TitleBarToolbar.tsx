@@ -7,6 +7,7 @@ import { useCreateFile } from '../../../hooks/useCreateFile'
 import { useEditorActions } from '../../../hooks/editor/useEditorActions'
 import { getSiblingCandidatePaths } from '../../../lib/translations'
 import { usePublishStore } from '../../../store/publishStore'
+import { commandWantsFiles } from '../../../lib/publish'
 import { Button } from '../../ui/button'
 import {
   Save,
@@ -87,6 +88,11 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
       currentProjectSettings?.publishConfirmCommand?.trim()
   )
   const publishBusy = publishStage !== 'idle'
+  // Per-post publish needs an open post to scope to
+  const publishNeedsFile =
+    commandWantsFiles(currentProjectSettings?.publishPreflightCommand) ||
+    commandWantsFiles(currentProjectSettings?.publishConfirmCommand)
+  const publishDisabled = publishBusy || (publishNeedsFile && !currentFile)
 
   const bothPanelsHidden = !sidebarVisible && !frontmatterPanelVisible
 
@@ -154,9 +160,13 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
             onClick={() => void startPublish()}
             variant="ghost"
             size="sm"
-            disabled={publishBusy}
+            disabled={publishDisabled}
             className="size-7 p-0 [&_svg]:transform-gpu [&_svg]:scale-100 text-gray-700 dark:text-gray-300"
-            title="Publish…"
+            title={
+              publishNeedsFile
+                ? 'Publish this post…'
+                : 'Publish…'
+            }
             aria-label="Publish"
           >
             {publishStage === 'preflight' || publishStage === 'shipping' ? (

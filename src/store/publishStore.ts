@@ -8,8 +8,12 @@ import { toast } from '../lib/toast'
 import {
   DEFAULT_PULL_COMMAND,
   parsePreflightOutput,
-  confirmCommandFor,
+  expandPublishCommand,
+  commandWantsFiles,
 } from '../lib/publish'
+import { getSiblingCandidatePaths } from '../lib/translations'
+import { getEffectiveContentDirectory } from '../lib/project-registry'
+import { ASTRO_PATHS } from '../lib/constants'
 
 export type PublishStage =
   | 'idle'
@@ -39,6 +43,8 @@ interface PublishState {
   reviewProgress: string | null
   /** Index into SHIP_PHASES while shipping */
   shipPhase: number
+  /** Repo-relative paths the publish is scoped to ({files} expansion) */
+  scopedFiles: string[] | null
   log: string[]
   error: string | null
 }
@@ -59,8 +65,36 @@ const initialState: PublishState = {
   reviewReady: false,
   reviewProgress: null,
   shipPhase: 0,
+  scopedFiles: null,
   log: [],
   error: null,
+}
+
+/**
+ * Repo-relative paths of the currently open post plus every existing sibling
+ * translation: the scope of a per-post publish. Null when no file is open.
+ */
+async function resolveScopedFiles(
+  projectPath: string
+): Promise<string[] | null> {
+  const { currentFile } = useEditorStore.getState()
+  if (!currentFile) return null
+
+  const { currentProjectSettings } = useProjectStore.getState()
+  const contentDirectory = getEffectiveContentDirectory(currentProjectSettings)
+  const absolute = [currentFile.path]
+  for (const candidate of getSiblingCandidatePaths(currentFile.path)) {
+    const result = await commands.resolveFileEntry(
+      candidate,
+      projectPath,
+      contentDirectory !== ASTRO_PATHS.CONTENT_DIR ? contentDirectory : null
+    )
+    if (result.status === 'ok' && result.data) {
+      absolute.push(result.data.path)
+    }
+  }
+  const prefix = projectPath.endsWith('/') ? projectPath : `${projectPath}/`
+  return absolute.map(p => (p.startsWith(prefix) ? p.slice(prefix.length) : p))
 }
 
 const MAX_LOG_LINES = 200
@@ -191,12 +225,35 @@ export const usePublishStore = create<PublishState & PublishActions>(
         currentProjectSettings?.publishConfirmCommand?.trim()
       if (!projectPath || !preflightCommand || !confirmCommand) return
 
-      set({ stage: 'preflight', files: [], digest: null, log: [], error: null })
+      // Per-post scoping: when the commands take {files}, publishing is
+      // limited to the currently open post and its translation siblings
+      let scopedFiles: string[] | null = null
+      if (
+        commandWantsFiles(preflightCommand) ||
+        commandWantsFiles(confirmCommand)
+      ) {
+        scopedFiles = await resolveScopedFiles(projectPath)
+        if (!scopedFiles) {
+          toast.info('Open the post you want to publish first')
+          return
+        }
+      }
+
+      set({
+        stage: 'preflight',
+        files: [],
+        digest: null,
+        scopedFiles,
+        log: [],
+        error: null,
+      })
       toast.loading('Checking what would publish…', { id: 'publish' })
       try {
         await saveOpenFileIfDirty()
         const result = await commands.runProjectCommand(
-          preflightCommand,
+          expandPublishCommand(preflightCommand, {
+            files: scopedFiles ?? undefined,
+          }),
           projectPath
         )
         if (result.status === 'error') {
@@ -260,7 +317,7 @@ export const usePublishStore = create<PublishState & PublishActions>(
     },
 
     approveAndShip: async () => {
-      const { stage, digest, reviewPid } = get()
+      const { stage, digest, reviewPid, scopedFiles } = get()
       if (stage !== 'review' || !digest) return
       const { projectPath, currentProjectSettings } =
         useProjectStore.getState()
@@ -292,7 +349,10 @@ export const usePublishStore = create<PublishState & PublishActions>(
           },
           async () => {
             const result = await commands.runProjectCommand(
-              confirmCommandFor(confirmTemplate, digest),
+              expandPublishCommand(confirmTemplate, {
+                digest,
+                files: scopedFiles ?? undefined,
+              }),
               projectPath
             )
             if (result.status === 'error') {

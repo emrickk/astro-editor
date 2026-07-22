@@ -30,6 +30,7 @@ import { DOCS_URLS } from '../docs-urls'
 import { useContentLinkerStore } from '@/store/contentLinkerStore'
 import { usePublishStore } from '@/store/publishStore'
 import { useProjectStore } from '@/store/projectStore'
+import { commandWantsFiles } from '../publish'
 
 /**
  * File-related commands
@@ -158,10 +159,14 @@ export const projectCommands: AppCommand[] = [
     },
     isAvailable: (context: CommandContext) => {
       const settings = useProjectStore.getState().currentProjectSettings
+      const needsFile =
+        commandWantsFiles(settings?.publishPreflightCommand) ||
+        commandWantsFiles(settings?.publishConfirmCommand)
       return (
         Boolean(context.projectPath) &&
         Boolean(settings?.publishPreflightCommand?.trim()) &&
         Boolean(settings?.publishConfirmCommand?.trim()) &&
+        (!needsFile || context.currentFile !== null) &&
         usePublishStore.getState().stage === 'idle'
       )
     },

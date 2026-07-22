@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { parsePreflightOutput, confirmCommandFor } from './publish'
+import {
+  parsePreflightOutput,
+  expandPublishCommand,
+  commandWantsFiles,
+} from './publish'
 
 const SHIP_PREFLIGHT_OUTPUT = `post change(s) vs origin/main (2):
   src/content/posts/a-temple-fair-on-the-fairway.md
@@ -32,10 +36,45 @@ describe('parsePreflightOutput', () => {
   })
 })
 
-describe('confirmCommandFor', () => {
+describe('expandPublishCommand', () => {
   it('substitutes the digest placeholder', () => {
     expect(
-      confirmCommandFor('npm run ship -- --yes --digest {digest}', 'ab12cd34')
+      expandPublishCommand('npm run ship -- --yes --digest {digest}', {
+        digest: 'ab12cd34',
+      })
     ).toBe('npm run ship -- --yes --digest ab12cd34')
+  })
+
+  it('repeats an option flag for each scoped file', () => {
+    expect(
+      expandPublishCommand('npm run ship -- --preflight --only {files}', {
+        files: ['src/content/posts/a.md', 'src/content/posts/a.zh.md'],
+      })
+    ).toBe(
+      "npm run ship -- --preflight --only 'src/content/posts/a.md' --only 'src/content/posts/a.zh.md'"
+    )
+  })
+
+  it('joins files without flag repetition when standalone', () => {
+    expect(
+      expandPublishCommand('publish.sh {files}', { files: ["it's.md"] })
+    ).toBe("publish.sh 'it'\\''s.md'")
+  })
+
+  it('substitutes digest and files together', () => {
+    expect(
+      expandPublishCommand('ship --yes --digest {digest} --only {files}', {
+        digest: 'ff00',
+        files: ['a.md'],
+      })
+    ).toBe("ship --yes --digest ff00 --only 'a.md'")
+  })
+})
+
+describe('commandWantsFiles', () => {
+  it('detects the files placeholder', () => {
+    expect(commandWantsFiles('ship --only {files}')).toBe(true)
+    expect(commandWantsFiles('ship --preflight')).toBe(false)
+    expect(commandWantsFiles(undefined)).toBe(false)
   })
 })
