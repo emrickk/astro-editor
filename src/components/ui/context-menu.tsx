@@ -6,8 +6,15 @@ import { openPath } from '@tauri-apps/plugin-opener'
 import { ask } from '@tauri-apps/plugin-dialog'
 import type { FileEntry } from '@/types'
 import { useProjectStore } from '../../store/projectStore'
+import { useEditorStore } from '../../store/editorStore'
+import { usePublishStore } from '../../store/publishStore'
 import { openInIde } from '../../lib/ide'
 import { getTitle } from '@/lib/files/sorting'
+import { getSiblingCandidatePaths } from '../../lib/translations'
+import {
+  getEffectiveContentDirectory,
+} from '../../lib/project-registry'
+import { ASTRO_PATHS } from '../../lib/constants'
 import { getPlatform } from '@/hooks/usePlatform'
 import { getPlatformString } from '@/lib/platform-strings'
 
@@ -20,12 +27,101 @@ interface ContextMenuOptions {
 
 export class FileContextMenu {
   private static async showConfirmationDialog(
-    fileName: string
+    fileName: string,
+    withSibling: boolean
   ): Promise<boolean> {
-    return ask(`Are you sure you want to delete "${fileName}"?`, {
-      title: 'Delete File',
-      kind: 'warning',
-    })
+    return ask(
+      withSibling
+        ? `Delete "${fileName}" and its translation file? Both language files will be removed.`
+        : `Are you sure you want to delete "${fileName}"?`,
+      {
+        title: 'Delete Post',
+        kind: 'warning',
+      }
+    )
+  }
+
+  /** Existing sibling translation file for a post, resolved on disk. */
+  private static async findSiblingPath(
+    filePath: string,
+    projectPath: string
+  ): Promise<string | null> {
+    const { currentProjectSettings } = useProjectStore.getState()
+    const contentDirectory = getEffectiveContentDirectory(
+      currentProjectSettings
+    )
+    for (const candidate of getSiblingCandidatePaths(filePath)) {
+      const result = await commands.resolveFileEntry(
+        candidate,
+        projectPath,
+        contentDirectory !== ASTRO_PATHS.CONTENT_DIR ? contentDirectory : null
+      )
+      if (result.status === 'ok' && result.data) {
+        return result.data.path
+      }
+    }
+    return null
+  }
+
+  /**
+   * Deletes a post (and its sibling translation when one exists), closes it
+   * in the editor if open, and offers to publish the removal so the site
+   * stops serving the post.
+   */
+  private static async deletePost(
+    file: FileEntry,
+    fileName: string,
+    projectPath: string,
+    onRefresh?: () => void
+  ): Promise<void> {
+    const siblingPath = await FileContextMenu.findSiblingPath(
+      file.path,
+      projectPath
+    )
+    const confirmed = await FileContextMenu.showConfirmationDialog(
+      fileName,
+      siblingPath !== null
+    )
+    if (!confirmed) return
+
+    await remove(file.path)
+    if (siblingPath) {
+      await remove(siblingPath)
+    }
+
+    const { currentFile, closeCurrentFile } = useEditorStore.getState()
+    if (
+      currentFile &&
+      (currentFile.path === file.path || currentFile.path === siblingPath)
+    ) {
+      closeCurrentFile()
+    }
+    if (onRefresh) {
+      onRefresh()
+    }
+
+    // A post that was ever published stays on the site until the removal
+    // ships. Offer it right here; an unpublished draft just reports
+    // "nothing to publish".
+    const { currentProjectSettings } = useProjectStore.getState()
+    if (
+      currentProjectSettings?.publishPreflightCommand?.trim() &&
+      currentProjectSettings?.publishConfirmCommand?.trim()
+    ) {
+      const publishRemoval = await ask(
+        'The site keeps showing this post until the removal is published. Publish the removal now?',
+        { title: 'Publish Removal', kind: 'info' }
+      )
+      if (publishRemoval) {
+        const prefix = projectPath.endsWith('/')
+          ? projectPath
+          : `${projectPath}/`
+        const relPaths = [file.path, siblingPath]
+          .filter((p): p is string => p !== null)
+          .map(p => (p.startsWith(prefix) ? p.slice(prefix.length) : p))
+        void usePublishStore.getState().startPublish(relPaths)
+      }
+    }
   }
 
   private static getIdeCommand(): string | null {
@@ -196,15 +292,12 @@ export class FileContextMenu {
           void (async () => {
             try {
               const fileName = getTitle(file, titleField)
-              const confirmed =
-                await FileContextMenu.showConfirmationDialog(fileName)
-              if (confirmed) {
-                await remove(file.path)
-                // Refresh the file list if callback is provided
-                if (onRefresh) {
-                  onRefresh()
-                }
-              }
+              await FileContextMenu.deletePost(
+                file,
+                fileName,
+                projectPath,
+                onRefresh
+              )
             } catch (error) {
               // eslint-disable-next-line no-console
               console.error('Failed to delete file:', error)

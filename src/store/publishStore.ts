@@ -53,7 +53,9 @@ interface PublishState {
 
 interface PublishActions {
   pull: () => Promise<void>
-  startPublish: () => Promise<void>
+  /** filesOverride: repo-relative paths to publish instead of the open post
+   *  (used by the delete flow to publish a removal). */
+  startPublish: (filesOverride?: string[]) => Promise<void>
   approveAndShip: () => Promise<void>
   cancelReview: () => Promise<void>
   dismissError: () => void
@@ -218,7 +220,7 @@ export const usePublishStore = create<PublishState & PublishActions>(
       }
     },
 
-    startPublish: async () => {
+    startPublish: async (filesOverride?: string[]) => {
       if (get().stage !== 'idle') return
       const { projectPath, currentProjectSettings } =
         useProjectStore.getState()
@@ -229,11 +231,13 @@ export const usePublishStore = create<PublishState & PublishActions>(
       if (!projectPath || !preflightCommand || !confirmCommand) return
 
       // Per-post scoping: when the commands take {files}, publishing is
-      // limited to the currently open post and its translation siblings
-      let scopedFiles: string[] | null = null
+      // limited to the currently open post and its translation siblings,
+      // unless the caller scoped it explicitly (e.g. a deletion).
+      let scopedFiles: string[] | null = filesOverride ?? null
       if (
-        commandWantsFiles(preflightCommand) ||
-        commandWantsFiles(confirmCommand)
+        !scopedFiles &&
+        (commandWantsFiles(preflightCommand) ||
+          commandWantsFiles(confirmCommand))
       ) {
         scopedFiles = await resolveScopedFiles(projectPath)
         if (!scopedFiles) {
