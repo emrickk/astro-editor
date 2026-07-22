@@ -3,6 +3,7 @@ pub mod diagnostics;
 pub mod files;
 pub mod fonts;
 pub mod ide;
+pub mod image_handler;
 pub mod mdx_components;
 pub mod menu;
 pub mod preferences;

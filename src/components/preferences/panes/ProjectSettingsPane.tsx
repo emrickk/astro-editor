@@ -49,6 +49,12 @@ export const ProjectSettingsPane: React.FC = () => {
     })
   }
 
+  const handleImageDropCommandChange = (value: string) => {
+    void updateProject({
+      imageDropCommand: value.trim() || undefined, // Remove empty strings
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg border bg-muted/50 p-4 mb-6">
@@ -148,6 +154,27 @@ export const ProjectSettingsPane: React.FC = () => {
               onCheckedChange={handleAbsolutePathsChange}
             />
           </div>
+        </Field>
+      </SettingsSection>
+
+      <SettingsSection title="Images">
+        <Field>
+          <FieldLabel>Image Drop Command</FieldLabel>
+          <FieldContent>
+            <PreferencesTextInput
+              value={currentProjectSettings?.imageDropCommand || ''}
+              onCommit={handleImageDropCommandChange}
+              placeholder="node scripts/images/drop.mjs"
+            />
+            <FieldDescription>
+              Optional shell command run for images dropped into the editor,
+              instead of copying them into the assets directory. It runs from
+              the project root with the image path appended as one argument,
+              and whatever it prints to stdout is inserted at the cursor (for
+              example a markdown snippet pointing at a CDN URL). Leave empty
+              to keep the default copy-to-assets behaviour.
+            </FieldDescription>
+          </FieldContent>
         </Field>
       </SettingsSection>
 

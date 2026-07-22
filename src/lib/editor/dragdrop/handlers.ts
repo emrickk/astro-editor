@@ -129,7 +129,10 @@ export const handleTauriFileDrop = async (
       currentFile!.collection
     )
 
-    const insertText = processedFiles.map(file => file.markdownText).join('\n')
+    const insertText = processedFiles
+      .map(file => file.markdownText)
+      .filter(text => text.length > 0)
+      .join('\n')
 
     // Insert processed text at cursor position
     const { state } = editorView

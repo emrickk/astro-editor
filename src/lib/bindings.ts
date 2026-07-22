@@ -394,6 +394,23 @@ async openPathInIde(ideCommand: string, filePath: string) : Promise<Result<strin
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Runs the project's configured image drop command for a dropped image.
+ * 
+ * The command runs via `sh -c` with the project root as working directory
+ * and the image path appended as a single quoted argument. Whatever the
+ * command prints to stdout is returned verbatim; the frontend inserts it
+ * into the editor (typically a markdown image snippet pointing at a CDN).
+ * A non-zero exit fails the drop, with stderr as the error message.
+ */
+async runImageDropCommand(command: string, imagePath: string, projectPath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("run_image_drop_command", { command, imagePath, projectPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async scanMdxComponents(projectPath: string, mdxDirectory: string | null) : Promise<Result<MdxComponent[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("scan_mdx_components", { projectPath, mdxDirectory }) };

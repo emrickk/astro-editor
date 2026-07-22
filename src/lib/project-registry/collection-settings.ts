@@ -33,6 +33,7 @@ export function getCollectionSettings(
     draft: string
   }
   useRelativeAssetPaths: boolean
+  imageDropCommand?: string
   urlPattern?: string
 } {
   // Handle null/undefined projectSettings
@@ -50,6 +51,7 @@ export function getCollectionSettings(
         draft: 'draft',
       },
       useRelativeAssetPaths: true,
+      imageDropCommand: undefined,
       urlPattern: undefined,
     }
   }
@@ -120,6 +122,10 @@ export function getCollectionSettings(
     pathOverrides: effectivePathOverrides,
     frontmatterMappings: effectiveFrontmatterMappings,
     useRelativeAssetPaths: !useAbsolutePaths, // Invert: absolute=false means relative=true
+    imageDropCommand:
+      collectionSettings?.imageDropCommand ||
+      projectSettings.imageDropCommand ||
+      undefined,
     urlPattern: collectionSettings?.urlPattern,
   }
 }

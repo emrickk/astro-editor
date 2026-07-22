@@ -3,6 +3,8 @@ import { useProjectStore } from '../../../store/projectStore'
 import { useEditorStore } from '../../../store/editorStore'
 import { processFileToAssets, IMAGE_EXTENSIONS_WITH_DOTS } from '../../files'
 import { getCollectionSettings } from '../../project-registry'
+import { commands } from '@/types'
+import { toast } from '../../toast'
 
 /**
  * Check if a file is an image based on its extension
@@ -52,6 +54,45 @@ export const formatAsMarkdown = (
 }
 
 /**
+ * Run the project's configured image drop command for a dropped image and
+ * use its stdout as the markdown to insert. On failure nothing is inserted
+ * (never a stray local copy) and the error surfaces as a toast.
+ */
+const processImageViaDropCommand = async (
+  filePath: string,
+  filename: string,
+  projectPath: string,
+  imageDropCommand: string
+): Promise<ProcessedFile> => {
+  const toastId = toast.loading(`Processing ${filename}…`, {
+    description: 'Running the image drop command',
+  })
+  const result = await commands.runImageDropCommand(
+    imageDropCommand,
+    filePath,
+    projectPath
+  )
+  toast.dismiss(toastId)
+
+  if (result.status === 'error') {
+    toast.error('Image drop command failed', { description: result.error })
+    return {
+      originalPath: filePath,
+      filename,
+      isImage: true,
+      markdownText: '',
+    }
+  }
+
+  return {
+    originalPath: filePath,
+    filename,
+    isImage: true,
+    markdownText: result.data.trim(),
+  }
+}
+
+/**
  * Process a single file for drag and drop
  * @param filePath - Path to the dropped file
  * @param projectPath - Path to the project root
@@ -76,6 +117,17 @@ export const processDroppedFile = async (
       currentProjectSettings,
       collection
     )
+
+    // Images route through the project's drop command when one is configured
+    if (isImage && effectiveSettings.imageDropCommand) {
+      return processImageViaDropCommand(
+        filePath,
+        filename,
+        projectPath,
+        effectiveSettings.imageDropCommand
+      )
+    }
+
     const useRelativePaths = effectiveSettings.useRelativeAssetPaths
 
     // Current file must be open for drag-and-drop to work

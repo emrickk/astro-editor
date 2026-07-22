@@ -38,6 +38,11 @@ export interface ProjectSettings {
   defaultFileType?: 'md' | 'mdx'
   // Override to use absolute paths for images (defaults to relative paths, matching Astro conventions)
   useAbsoluteAssetPaths?: boolean
+  // Shell command run for images dropped into the editor instead of copying
+  // them into the assets directory. Runs from the project root with the
+  // image path appended as one argument; its stdout is inserted at the
+  // cursor (e.g. a markdown snippet pointing at a CDN URL).
+  imageDropCommand?: string
   // Collection-specific settings overrides
   collections?: CollectionSettings[]
 }
@@ -58,6 +63,8 @@ export interface CollectionSpecificSettings {
   defaultFileType?: 'md' | 'mdx'
   // Override to use absolute paths for images (collection-level override)
   useAbsoluteAssetPaths?: boolean
+  // Shell command for dropped images (collection-level override)
+  imageDropCommand?: string
   // URL pattern template for content links (e.g. "/writing/{slug}")
   urlPattern?: string
 }

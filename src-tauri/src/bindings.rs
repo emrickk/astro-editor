@@ -63,6 +63,8 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         crate::commands::diagnostics::get_app_info,
         // ide.rs commands
         crate::commands::ide::open_path_in_ide,
+        // image_handler.rs commands
+        crate::commands::image_handler::run_image_drop_command,
         // mdx_components.rs commands
         crate::commands::mdx_components::scan_mdx_components,
         // clipboard.rs commands
