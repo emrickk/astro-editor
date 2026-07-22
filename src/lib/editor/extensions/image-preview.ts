@@ -2,11 +2,13 @@ import {
   Decoration,
   type DecorationSet,
   EditorView,
-  ViewPlugin,
-  type ViewUpdate,
   WidgetType,
 } from '@codemirror/view'
-import { RangeSetBuilder } from '@codemirror/state'
+import {
+  type EditorState,
+  RangeSetBuilder,
+  StateField,
+} from '@codemirror/state'
 import { imageUrlsOnLine } from '../../images'
 
 /**
@@ -14,6 +16,10 @@ import { imageUrlsOnLine } from '../../images'
  * `![](...)` or a raw `<img src>`) gets a thumbnail strip rendered directly
  * below it, so posts read as posts instead of URL soup. Remote and data
  * URLs only; the text stays fully editable above the preview.
+ *
+ * Implemented as a StateField because block decorations affect vertical
+ * layout and may not be provided from a view plugin (doing so makes the
+ * editor loop on layout and freeze).
  */
 
 class ImageStripWidget extends WidgetType {
@@ -23,6 +29,10 @@ class ImageStripWidget extends WidgetType {
 
   override eq(other: ImageStripWidget): boolean {
     return this.urls.join('\n') === other.urls.join('\n')
+  }
+
+  override get estimatedHeight(): number {
+    return 166
   }
 
   toDOM(): HTMLElement {
@@ -48,46 +58,34 @@ class ImageStripWidget extends WidgetType {
   }
 }
 
-function buildDecorations(view: EditorView): DecorationSet {
+function computeDecorations(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>()
-  for (const { from, to } of view.visibleRanges) {
-    let pos = from
-    while (pos <= to) {
-      const line = view.state.doc.lineAt(pos)
-      const urls = imageUrlsOnLine(line.text)
-      if (urls.length > 0) {
-        builder.add(
-          line.to,
-          line.to,
-          Decoration.widget({
-            widget: new ImageStripWidget(urls),
-            block: true,
-            side: 1,
-          })
-        )
-      }
-      pos = line.to + 1
+  for (let lineNumber = 1; lineNumber <= state.doc.lines; lineNumber++) {
+    const line = state.doc.line(lineNumber)
+    const urls = imageUrlsOnLine(line.text)
+    if (urls.length > 0) {
+      builder.add(
+        line.to,
+        line.to,
+        Decoration.widget({
+          widget: new ImageStripWidget(urls),
+          block: true,
+          side: 1,
+        })
+      )
     }
   }
   return builder.finish()
 }
 
-const imagePreviewPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet
-
-    constructor(view: EditorView) {
-      this.decorations = buildDecorations(view)
-    }
-
-    update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
-        this.decorations = buildDecorations(update.view)
-      }
-    }
+const imagePreviewField = StateField.define<DecorationSet>({
+  create: computeDecorations,
+  update(decorations, transaction) {
+    if (!transaction.docChanged) return decorations
+    return computeDecorations(transaction.state)
   },
-  { decorations: plugin => plugin.decorations }
-)
+  provide: field => EditorView.decorations.from(field),
+})
 
 const imagePreviewTheme = EditorView.baseTheme({
   '.cm-image-preview-strip': {
@@ -110,5 +108,5 @@ const imagePreviewTheme = EditorView.baseTheme({
 })
 
 export function imagePreview() {
-  return [imagePreviewPlugin, imagePreviewTheme]
+  return [imagePreviewField, imagePreviewTheme]
 }
