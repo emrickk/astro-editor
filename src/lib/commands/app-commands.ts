@@ -16,6 +16,7 @@ import {
   Link,
   BookOpen,
   Keyboard,
+  Languages,
 } from 'lucide-react'
 import { openPath } from '@tauri-apps/plugin-opener'
 import { AppCommand, CommandContext } from './types'
@@ -83,6 +84,18 @@ export const navigationCommands: AppCommand[] = [
       context.toggleFrontmatterPanel()
     },
     isAvailable: () => true,
+  },
+  {
+    id: 'switch-translation',
+    label: 'Switch Translation',
+    description:
+      'Open the sibling translation of the current file (slug.md <-> slug.zh.md / slug.en.md)',
+    icon: Languages,
+    group: 'navigation',
+    execute: (context: CommandContext) => {
+      void context.switchTranslation()
+    },
+    isAvailable: (context: CommandContext) => context.currentFile !== null,
   },
   {
     id: 'content-linker',

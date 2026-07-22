@@ -21,6 +21,7 @@ export interface CommandContext {
   toggleSidebar: () => void
   toggleFrontmatterPanel: () => void
   saveFile: () => Promise<void>
+  switchTranslation: () => Promise<void>
   closeCurrentFile: () => void
   loadCollections: () => void
   loadCollectionFiles: () => void

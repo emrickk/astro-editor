@@ -25,18 +25,20 @@ const DEFAULT_HOTKEY_OPTS = {
 export function useKeyboardShortcuts(
   onOpenPreferences: (open: boolean) => void
 ) {
-  const { saveFile } = useEditorActions()
+  const { saveFile, switchTranslation } = useEditorActions()
   const platform = usePlatform()
 
   // Use refs to capture latest callbacks
   const saveFileRef = useRef(saveFile)
+  const switchTranslationRef = useRef(switchTranslation)
   const openPreferencesRef = useRef(onOpenPreferences)
 
   // Update refs when callbacks change
   useEffect(() => {
     saveFileRef.current = saveFile
+    switchTranslationRef.current = switchTranslation
     openPreferencesRef.current = onOpenPreferences
-  }, [saveFile, onOpenPreferences])
+  }, [saveFile, switchTranslation, onOpenPreferences])
 
   // Cmd+S: Save File
   useHotkeys(
@@ -90,6 +92,18 @@ export function useKeyboardShortcuts(
       const { currentFile, closeCurrentFile } = useEditorStore.getState()
       if (currentFile) {
         closeCurrentFile()
+      }
+    },
+    DEFAULT_HOTKEY_OPTS
+  )
+
+  // Cmd+Shift+L: Switch to sibling translation file (slug.md <-> slug.zh.md)
+  useHotkeys(
+    'mod+shift+l',
+    () => {
+      const { currentFile } = useEditorStore.getState()
+      if (currentFile) {
+        void switchTranslationRef.current()
       }
     },
     DEFAULT_HOTKEY_OPTS

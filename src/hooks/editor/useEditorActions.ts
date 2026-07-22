@@ -14,6 +14,7 @@ import {
   getEffectiveContentDirectory,
 } from '../../lib/project-registry'
 import { findOwningProjectPath } from '../../lib/deep-link'
+import { getSiblingCandidatePaths } from '../../lib/translations'
 import { ASTRO_PATHS } from '../../lib/constants'
 
 /**
@@ -296,5 +297,42 @@ export function useEditorActions() {
     await info(`Deep link opened file: ${result.data.id}`)
   }, [])
 
-  return { saveFile, openFileByPath }
+  /**
+   * Jumps between a post and its sibling translation file
+   * (`slug.md` <-> `slug.zh.md` / `slug.en.md`). Saves first when dirty so
+   * flipping languages mid-writing never drops edits.
+   */
+  const switchTranslation = useCallback(async () => {
+    const { currentFile, isDirty } = useEditorStore.getState()
+    if (!currentFile) return
+
+    const { projectPath, currentProjectSettings } = useProjectStore.getState()
+    if (!projectPath) return
+
+    if (isDirty) {
+      await saveFile(false)
+    }
+
+    const contentDirectory = getEffectiveContentDirectory(
+      currentProjectSettings
+    )
+    for (const candidate of getSiblingCandidatePaths(currentFile.path)) {
+      const result = await commands.resolveFileEntry(
+        candidate,
+        projectPath,
+        contentDirectory !== ASTRO_PATHS.CONTENT_DIR ? contentDirectory : null
+      )
+      if (result.status === 'ok' && result.data) {
+        useEditorStore.getState().openFile(result.data)
+        return
+      }
+    }
+
+    toast.info('No translation file found', {
+      description:
+        'Expected a sibling like slug.zh.md or slug.en.md next to this file.',
+    })
+  }, [saveFile])
+
+  return { saveFile, openFileByPath, switchTranslation }
 }

@@ -37,7 +37,7 @@ export function useCommandContext(): CommandContext {
   )
 
   // Get editor actions (Hybrid Action Hooks pattern)
-  const { saveFile } = useEditorActions()
+  const { saveFile, switchTranslation } = useEditorActions()
 
   // Get collections data from TanStack Query
   const { data: collections = [] } = useCollectionsQuery(
@@ -61,6 +61,7 @@ export function useCommandContext(): CommandContext {
     toggleSidebar,
     toggleFrontmatterPanel,
     saveFile,
+    switchTranslation,
     closeCurrentFile,
     loadCollections: () => {
       // Use custom event pattern since command context can't use React hooks
