@@ -181,6 +181,15 @@ export const useCreateFile = () => {
         }
       }
 
+      // Never write a file with no frontmatter at all: in schema-validated
+      // collections it breaks every subsequent build (and with it any
+      // publish pipeline) until filled in. When the schema was unavailable,
+      // fall back to a title, the safest universal field.
+      if (Object.keys(defaultFrontmatter).length === 0) {
+        defaultFrontmatter.title = defaultTitle
+        hasTitleField = true
+      }
+
       // Create YAML frontmatter with proper type formatting
       const frontmatterYaml =
         Object.keys(defaultFrontmatter).length > 0
