@@ -4,6 +4,8 @@ import { useEditorStore } from '../../../store/editorStore'
 import { useProjectStore } from '../../../store/projectStore'
 import { useUIStore } from '../../../store/uiStore'
 import { useCreateFile } from '../../../hooks/useCreateFile'
+import { useEditorActions } from '../../../hooks/editor/useEditorActions'
+import { getSiblingCandidatePaths } from '../../../lib/translations'
 import { Button } from '../../ui/button'
 import {
   Save,
@@ -14,6 +16,7 @@ import {
   Plus,
   Eye,
   Pilcrow,
+  Languages,
 } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 
@@ -57,12 +60,16 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
   const showBars = useUIStore(state => state.showBars)
 
   const { createNewFile } = useCreateFile()
+  const { switchTranslation } = useEditorActions()
 
   const handleSave = () => {
     if (currentFile && isDirty) {
       void saveFile()
     }
   }
+
+  const canSwitchTranslation =
+    !!currentFile && getSiblingCandidatePaths(currentFile.path).length > 0
 
   const bothPanelsHidden = !sidebarVisible && !frontmatterPanelVisible
 
@@ -116,6 +123,19 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
             title={`New ${selectedCollection} file`}
           >
             <Plus className="size-4" />
+          </Button>
+        )}
+
+        {canSwitchTranslation && (
+          <Button
+            onClick={() => void switchTranslation()}
+            variant="ghost"
+            size="sm"
+            className="size-7 p-0 [&_svg]:transform-gpu [&_svg]:scale-100 text-gray-700 dark:text-gray-300"
+            title="Switch Translation (⌘⇧L)"
+            aria-label="Switch Translation"
+          >
+            <Languages className="size-4" />
           </Button>
         )}
 
