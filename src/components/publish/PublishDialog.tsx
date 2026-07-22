@@ -8,9 +8,60 @@ import {
 } from '../ui/dialog'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
-import { Check, Circle, Loader2, Rocket } from 'lucide-react'
+import { Check, Circle, Loader2, Rocket, CircleAlert } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { usePublishStore, SHIP_PHASES } from '../../store/publishStore'
+import { extractFindings } from '../../lib/publish'
+
+/**
+ * Error body: per-file findings first ("what needs fixing"), raw output
+ * below for anything the findings parser did not recognize.
+ */
+function ErrorBody({ error, log }: { error: string | null; log: string[] }) {
+  const findings = error ? extractFindings(error) : []
+  return (
+    <div className="space-y-3">
+      {findings.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium">What needs fixing:</p>
+          <ul className="space-y-1.5">
+            {findings.map(finding => (
+              <li
+                key={`${finding.file}|${finding.message}`}
+                className="flex items-start gap-2 text-sm"
+              >
+                <CircleAlert className="size-4 mt-0.5 shrink-0 text-destructive" />
+                <span>
+                  <span className="font-medium">{finding.message}</span>{' '}
+                  <span className="text-muted-foreground font-mono text-xs">
+                    {finding.file.split('/').pop()}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {error && (
+        <pre
+          className={cn(
+            'whitespace-pre-wrap font-mono overflow-y-auto',
+            findings.length > 0
+              ? 'text-xs text-muted-foreground bg-muted rounded p-2 max-h-32'
+              : 'text-sm text-destructive max-h-56'
+          )}
+        >
+          {error}
+        </pre>
+      )}
+      {log.length > 0 && findings.length === 0 && (
+        <pre className="text-xs font-mono bg-muted rounded p-2 max-h-40 overflow-y-auto whitespace-pre-wrap">
+          {log.slice(-14).join('\n')}
+        </pre>
+      )}
+    </div>
+  )
+}
 
 /**
  * Publish confirmation dialog.
@@ -139,18 +190,7 @@ export function PublishDialog() {
         )}
 
         {stage === 'error' && (
-          <div className="space-y-3">
-            {error && (
-              <pre className="text-sm text-destructive whitespace-pre-wrap font-mono max-h-56 overflow-y-auto">
-                {error}
-              </pre>
-            )}
-            {log.length > 0 && (
-              <pre className="text-xs font-mono bg-muted rounded p-2 max-h-40 overflow-y-auto whitespace-pre-wrap">
-                {log.slice(-14).join('\n')}
-              </pre>
-            )}
-          </div>
+          <ErrorBody error={error} log={log} />
         )}
 
         <DialogFooter>

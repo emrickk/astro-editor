@@ -3,6 +3,7 @@ import {
   parsePreflightOutput,
   expandPublishCommand,
   commandWantsFiles,
+  extractFindings,
 } from './publish'
 
 const SHIP_PREFLIGHT_OUTPUT = `post change(s) vs origin/main (2):
@@ -68,6 +69,40 @@ describe('expandPublishCommand', () => {
         files: ['a.md'],
       })
     ).toBe("ship --yes --digest ff00 --only 'a.md'")
+  })
+})
+
+describe('extractFindings', () => {
+  it('pulls per-file findings out of fast-check output', () => {
+    const output = `exit 1:
+npm notice run theneverless@1.0.0 ship
+fast checks failed:
+  src/content/posts/2026-07-21.md: missing required field description
+  src/content/posts/2026-07-21.md: pubDate does not parse as a date (nope)`
+    expect(extractFindings(output)).toEqual([
+      {
+        file: 'src/content/posts/2026-07-21.md',
+        message: 'missing required field description',
+      },
+      {
+        file: 'src/content/posts/2026-07-21.md',
+        message: 'pubDate does not parse as a date (nope)',
+      },
+    ])
+  })
+
+  it('dedupes repeated findings and ignores non-finding lines', () => {
+    const output = `fast checks failed:
+  a.md: missing required field title
+  a.md: missing required field title
+changeset digest: abc123`
+    expect(extractFindings(output)).toHaveLength(1)
+  })
+
+  it('returns empty for unstructured errors', () => {
+    expect(
+      extractFindings('origin/main has 2 commit(s) not in local main')
+    ).toEqual([])
   })
 })
 

@@ -48,6 +48,31 @@ export function parsePreflightOutput(output: string): PreflightResult {
   return { digest, files, empty: digest === null }
 }
 
+export interface PublishFinding {
+  file: string
+  message: string
+}
+
+/**
+ * Extracts per-file findings from pipeline error output. Fast checks and
+ * schema validators print findings as `  <path>.md: <message>` lines; these
+ * become the prominent "what needs fixing" list in the error dialog, ahead
+ * of the raw log tail.
+ */
+export function extractFindings(errorText: string): PublishFinding[] {
+  const findings: PublishFinding[] = []
+  const seen = new Set<string>()
+  for (const line of errorText.split('\n')) {
+    const match = line.match(/^\s*(\S+\.(?:md|mdx)):\s+(.+)$/)
+    if (!match) continue
+    const key = `${match[1]}|${match[2]}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    findings.push({ file: match[1]!, message: match[2]! })
+  }
+  return findings
+}
+
 /** Quotes a path for safe interpolation into a POSIX shell command line. */
 export function shellQuote(path: string): string {
   return `'${path.replaceAll("'", `'\\''`)}'`

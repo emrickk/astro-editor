@@ -89,7 +89,15 @@ pub async fn run_project_command(
             let code = status.code().map_or("signal".to_string(), |c| c.to_string());
             let mut all = transcript;
             all.extend(err_lines);
-            let tail: Vec<_> = all.iter().rev().take(8).cloned().collect();
+            // Package-manager chatter would bury the pipeline's actual
+            // explanation in the short tail shown to the user.
+            let noise = |line: &&String| {
+                let t = line.trim_start();
+                !(t.starts_with("npm warn")
+                    || t.starts_with("npm WARN")
+                    || t.starts_with("npm notice"))
+            };
+            let tail: Vec<_> = all.iter().filter(noise).rev().take(10).cloned().collect();
             let tail: Vec<_> = tail.into_iter().rev().collect();
             error!("Project command failed (exit {code})");
             return Err(format!("exit {code}:\n{}", tail.join("\n")));
