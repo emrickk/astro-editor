@@ -411,6 +411,46 @@ async runImageDropCommand(command: string, imagePath: string, projectPath: strin
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Runs a project-level command (pull, publish preflight, publish confirm)
+ * from the project root, streaming each merged stdout/stderr line to the
+ * frontend as a `project-command-log` event and returning the full output.
+ * Non-zero exit fails with the output tail as the error message.
+ */
+async runProjectCommand(command: string, projectPath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("run_project_command", { command, projectPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Starts a long-running review server (e.g. a production preview) in its
+ * own process group and returns the group leader's pid. The caller stops it
+ * with `stop_review_server`. Output is discarded; the server is expected to
+ * open the review page itself when ready.
+ */
+async startReviewServer(command: string, projectPath: string) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_review_server", { command, projectPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stops a review server started by `start_review_server` by signalling its
+ * whole process group (npm -> node -> server chains die together).
+ */
+async stopReviewServer(pid: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_review_server", { pid }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async scanMdxComponents(projectPath: string, mdxDirectory: string | null) : Promise<Result<MdxComponent[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("scan_mdx_components", { projectPath, mdxDirectory }) };

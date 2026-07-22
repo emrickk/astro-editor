@@ -8,5 +8,6 @@ pub mod mdx_components;
 pub mod menu;
 pub mod preferences;
 pub mod project;
+pub mod publish;
 pub mod updater;
 pub mod watcher;

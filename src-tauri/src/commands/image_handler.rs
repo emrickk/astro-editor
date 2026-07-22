@@ -5,7 +5,7 @@ use std::process::Command;
 
 /// Compute an augmented PATH so user commands (node, npm, etc.) resolve in
 /// production builds, where the GUI app inherits a minimal environment.
-fn get_augmented_path() -> String {
+pub(crate) fn get_augmented_path() -> String {
     let current_path = env::var("PATH").unwrap_or_default();
     let mut paths: Vec<&str> = current_path.split(':').collect();
 

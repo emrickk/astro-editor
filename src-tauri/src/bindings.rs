@@ -65,6 +65,10 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         crate::commands::ide::open_path_in_ide,
         // image_handler.rs commands
         crate::commands::image_handler::run_image_drop_command,
+        // publish.rs commands
+        crate::commands::publish::run_project_command,
+        crate::commands::publish::start_review_server,
+        crate::commands::publish::stop_review_server,
         // mdx_components.rs commands
         crate::commands::mdx_components::scan_mdx_components,
         // clipboard.rs commands

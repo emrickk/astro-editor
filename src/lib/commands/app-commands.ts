@@ -17,6 +17,8 @@ import {
   BookOpen,
   Keyboard,
   Languages,
+  Download,
+  Rocket,
 } from 'lucide-react'
 import { openPath } from '@tauri-apps/plugin-opener'
 import { AppCommand, CommandContext } from './types'
@@ -26,6 +28,8 @@ import { openInIde } from '../ide'
 import { openProjectViaDialog } from '../projects/actions'
 import { DOCS_URLS } from '../docs-urls'
 import { useContentLinkerStore } from '@/store/contentLinkerStore'
+import { usePublishStore } from '@/store/publishStore'
+import { useProjectStore } from '@/store/projectStore'
 
 /**
  * File-related commands
@@ -126,6 +130,41 @@ export const projectCommands: AppCommand[] = [
       await openProjectViaDialog()
     },
     isAvailable: () => true,
+  },
+  {
+    id: 'pull-latest',
+    label: 'Pull Latest Changes',
+    description: 'Fetch and fast-forward the project from its git remote',
+    icon: Download,
+    group: 'project',
+    execute: () => {
+      void usePublishStore.getState().pull()
+    },
+    isAvailable: (context: CommandContext) => {
+      return (
+        Boolean(context.projectPath) &&
+        usePublishStore.getState().stage === 'idle'
+      )
+    },
+  },
+  {
+    id: 'publish',
+    label: 'Publish…',
+    description: 'Run the project publish pipeline (review, checks, push)',
+    icon: Rocket,
+    group: 'project',
+    execute: () => {
+      void usePublishStore.getState().startPublish()
+    },
+    isAvailable: (context: CommandContext) => {
+      const settings = useProjectStore.getState().currentProjectSettings
+      return (
+        Boolean(context.projectPath) &&
+        Boolean(settings?.publishPreflightCommand?.trim()) &&
+        Boolean(settings?.publishConfirmCommand?.trim()) &&
+        usePublishStore.getState().stage === 'idle'
+      )
+    },
   },
   {
     id: 'reload-collections',

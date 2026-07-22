@@ -43,6 +43,15 @@ export interface ProjectSettings {
   // image path appended as one argument; its stdout is inserted at the
   // cursor (e.g. a markdown snippet pointing at a CDN URL).
   imageDropCommand?: string
+  // Shell command for the Pull action (default: git pull --ff-only)
+  pullCommand?: string
+  // Publish pipeline (all run from the project root, see src/lib/publish.ts):
+  // preflight prints the change set and a `changeset digest: <token>` line
+  publishPreflightCommand?: string
+  // optional long-running review server, stopped after the decision
+  publishReviewCommand?: string
+  // runs on approval; `{digest}` is replaced with the preflight token
+  publishConfirmCommand?: string
   // Collection-specific settings overrides
   collections?: CollectionSettings[]
 }

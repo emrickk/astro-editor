@@ -55,6 +55,19 @@ export const ProjectSettingsPane: React.FC = () => {
     })
   }
 
+  const handleCommandChange = (
+    key:
+      | 'pullCommand'
+      | 'publishPreflightCommand'
+      | 'publishReviewCommand'
+      | 'publishConfirmCommand',
+    value: string
+  ) => {
+    void updateProject({
+      [key]: value.trim() || undefined, // Remove empty strings
+    })
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg border bg-muted/50 p-4 mb-6">
@@ -173,6 +186,77 @@ export const ProjectSettingsPane: React.FC = () => {
               and whatever it prints to stdout is inserted at the cursor (for
               example a markdown snippet pointing at a CDN URL). Leave empty
               to keep the default copy-to-assets behaviour.
+            </FieldDescription>
+          </FieldContent>
+        </Field>
+      </SettingsSection>
+
+      <SettingsSection title="Sync & Publish">
+        <Field>
+          <FieldLabel>Pull Command</FieldLabel>
+          <FieldContent>
+            <PreferencesTextInput
+              value={currentProjectSettings?.pullCommand || ''}
+              onCommit={value => handleCommandChange('pullCommand', value)}
+              placeholder="git pull --ff-only"
+            />
+            <FieldDescription>
+              Command run by the Pull button (default: git pull --ff-only)
+            </FieldDescription>
+          </FieldContent>
+        </Field>
+
+        <Field>
+          <FieldLabel>Publish Preflight Command</FieldLabel>
+          <FieldContent>
+            <PreferencesTextInput
+              value={currentProjectSettings?.publishPreflightCommand || ''}
+              onCommit={value =>
+                handleCommandChange('publishPreflightCommand', value)
+              }
+              placeholder="npm run ship -- --preflight"
+            />
+            <FieldDescription>
+              Computes the change set before publishing. Must print a
+              &quot;changeset digest: &lt;token&gt;&quot; line; a non-zero
+              exit aborts with its own explanation. Publishing is enabled
+              only when this and the confirm command are set.
+            </FieldDescription>
+          </FieldContent>
+        </Field>
+
+        <Field>
+          <FieldLabel>Publish Review Command</FieldLabel>
+          <FieldContent>
+            <PreferencesTextInput
+              value={currentProjectSettings?.publishReviewCommand || ''}
+              onCommit={value =>
+                handleCommandChange('publishReviewCommand', value)
+              }
+              placeholder="npm run preview-posts -- --port 4326"
+            />
+            <FieldDescription>
+              Optional long-running review server started while the publish
+              dialog is open (e.g. a production preview); it is stopped after
+              your decision.
+            </FieldDescription>
+          </FieldContent>
+        </Field>
+
+        <Field>
+          <FieldLabel>Publish Confirm Command</FieldLabel>
+          <FieldContent>
+            <PreferencesTextInput
+              value={currentProjectSettings?.publishConfirmCommand || ''}
+              onCommit={value =>
+                handleCommandChange('publishConfirmCommand', value)
+              }
+              placeholder="npm run ship -- --yes --digest {digest}"
+            />
+            <FieldDescription>
+              Runs after you approve; {'{digest}'} is replaced with the
+              preflight token so the pipeline can verify nothing changed
+              since the review.
             </FieldDescription>
           </FieldContent>
         </Field>

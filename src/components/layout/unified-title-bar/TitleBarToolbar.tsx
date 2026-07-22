@@ -6,6 +6,7 @@ import { useUIStore } from '../../../store/uiStore'
 import { useCreateFile } from '../../../hooks/useCreateFile'
 import { useEditorActions } from '../../../hooks/editor/useEditorActions'
 import { getSiblingCandidatePaths } from '../../../lib/translations'
+import { usePublishStore } from '../../../store/publishStore'
 import { Button } from '../../ui/button'
 import {
   Save,
@@ -17,6 +18,9 @@ import {
   Eye,
   Pilcrow,
   Languages,
+  Download,
+  Rocket,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 
@@ -62,6 +66,13 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
   const { createNewFile } = useCreateFile()
   const { switchTranslation } = useEditorActions()
 
+  const currentProjectSettings = useProjectStore(
+    useShallow(state => state.currentProjectSettings)
+  )
+  const publishStage = usePublishStore(state => state.stage)
+  const pull = usePublishStore(state => state.pull)
+  const startPublish = usePublishStore(state => state.startPublish)
+
   const handleSave = () => {
     if (currentFile && isDirty) {
       void saveFile()
@@ -70,6 +81,12 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
 
   const canSwitchTranslation =
     !!currentFile && getSiblingCandidatePaths(currentFile.path).length > 0
+
+  const publishConfigured = Boolean(
+    currentProjectSettings?.publishPreflightCommand?.trim() &&
+      currentProjectSettings?.publishConfirmCommand?.trim()
+  )
+  const publishBusy = publishStage !== 'idle'
 
   const bothPanelsHidden = !sidebarVisible && !frontmatterPanelVisible
 
@@ -114,6 +131,42 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
       </div>
 
       <div className="flex items-center gap-2" data-tauri-drag-region>
+        {projectPath && (
+          <Button
+            onClick={() => void pull()}
+            variant="ghost"
+            size="sm"
+            disabled={publishBusy}
+            className="size-7 p-0 [&_svg]:transform-gpu [&_svg]:scale-100 text-gray-700 dark:text-gray-300"
+            title="Pull latest changes"
+            aria-label="Pull latest changes"
+          >
+            {publishStage === 'pulling' ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Download className="size-4" />
+            )}
+          </Button>
+        )}
+
+        {projectPath && publishConfigured && (
+          <Button
+            onClick={() => void startPublish()}
+            variant="ghost"
+            size="sm"
+            disabled={publishBusy}
+            className="size-7 p-0 [&_svg]:transform-gpu [&_svg]:scale-100 text-gray-700 dark:text-gray-300"
+            title="Publish…"
+            aria-label="Publish"
+          >
+            {publishStage === 'preflight' || publishStage === 'shipping' ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Rocket className="size-4" />
+            )}
+          </Button>
+        )}
+
         {selectedCollection && (
           <Button
             onClick={() => void createNewFile()}
