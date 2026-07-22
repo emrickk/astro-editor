@@ -11,7 +11,8 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
     mdxComponentsDirectory: 'src/components/mdx/',
   },
   frontmatterMappings: {
-    publishedDate: 'date', // Will try date, pubDate, publishedDate
+    // publishedDate deliberately unset: the collection-level fallback then
+    // tries pubDate, date, publishedDate in order (see collection-settings.ts)
     title: 'title',
     description: 'description',
     draft: 'draft',

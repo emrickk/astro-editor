@@ -246,6 +246,25 @@ export class ProjectRegistryManager {
       }
     }
 
+    // Update optional command settings if present (undefined removes them)
+    const OPTIONAL_COMMAND_KEYS = [
+      'imageDropCommand',
+      'pullCommand',
+      'publishPreflightCommand',
+      'publishReviewCommand',
+      'publishConfirmCommand',
+    ] as const
+    for (const key of OPTIONAL_COMMAND_KEYS) {
+      if (key in settings) {
+        const value = settings[key]
+        if (value === undefined) {
+          delete projectData.settings[key]
+        } else {
+          projectData.settings[key] = value
+        }
+      }
+    }
+
     // Update useAbsoluteAssetPaths if property is present
     if ('useAbsoluteAssetPaths' in settings) {
       if (settings.useAbsoluteAssetPaths === undefined) {
@@ -324,8 +343,12 @@ export class ProjectRegistryManager {
       return { ...DEFAULT_PROJECT_SETTINGS }
     }
 
-    // Merge hard-coded defaults with project-specific settings
+    // Merge hard-coded defaults with project-specific settings. Spread the
+    // stored settings first so scalar fields (defaultFileType, command
+    // settings like imageDropCommand or the publish pipeline) pass through
+    // without each needing to be listed here.
     return {
+      ...projectData.settings,
       pathOverrides: {
         ...DEFAULT_PROJECT_SETTINGS.pathOverrides,
         ...projectData.settings.pathOverrides,
@@ -334,10 +357,6 @@ export class ProjectRegistryManager {
         ...DEFAULT_PROJECT_SETTINGS.frontmatterMappings,
         ...projectData.settings.frontmatterMappings,
       },
-      // Include defaultFileType if present
-      defaultFileType: projectData.settings.defaultFileType,
-      // Include useAbsoluteAssetPaths (undefined by default, meaning use relative paths)
-      useAbsoluteAssetPaths: projectData.settings.useAbsoluteAssetPaths,
       // Include collections array if present
       collections: projectData.settings.collections || [],
     }
