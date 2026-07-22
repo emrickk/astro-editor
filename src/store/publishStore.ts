@@ -27,7 +27,7 @@ export type PublishStage =
  *  pipeline that prints none of them simply stays on the first phase. */
 export const SHIP_PHASES = [
   'Freshness check',
-  'Release checks',
+  'Checks',
   'Commit and push',
   'Deploy',
 ] as const
@@ -104,8 +104,8 @@ const MAX_LOG_LINES = 200
 
 /** Output markers that advance the shipping phase indicator */
 const PHASE_MARKERS: Array<{ pattern: RegExp; phase: number }> = [
-  { pattern: /running release checks/i, phase: 1 },
-  { pattern: /VERDICT: GO/, phase: 2 },
+  { pattern: /running (release|fast) checks/i, phase: 1 },
+  { pattern: /VERDICT: GO|fast checks passed/i, phase: 2 },
   { pattern: /^pushed \w+/i, phase: 3 },
 ]
 
