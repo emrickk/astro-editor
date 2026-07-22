@@ -8,3 +8,8 @@ onlyBuiltDependencies:
   - '@tailwindcss/oxide'
   - esbuild
   - sharp
+
+allowBuilds:
+  "@ast-grep/cli": true
+  esbuild: true
+  sharp: true
