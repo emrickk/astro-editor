@@ -372,13 +372,29 @@ pub async fn save_markdown_content(
     let validated_path = validate_project_path(&file_path, &project_root)?;
 
     let new_content = match (frontmatter, raw_frontmatter) {
-        // Frontmatter was edited - reorder and normalize
-        (Some(fm), _) => rebuild_markdown_with_frontmatter_and_imports_ordered(
-            &fm,
-            &imports,
-            &content,
-            schema_field_order,
-        )?,
+        // Frontmatter was edited. Prefer a format-preserving merge into the
+        // original raw block (keeps field order, quoting style, and comments
+        // for untouched fields); fall back to the full ordered rebuild when
+        // the original can't be merged safely.
+        (Some(fm), raw) => {
+            let mut normalized = fm.clone();
+            normalize_dates(&mut normalized);
+            let merged = raw
+                .as_deref()
+                .filter(|r| !r.trim().is_empty() && !normalized.is_empty())
+                .and_then(|r| merge_frontmatter_preserving_format(r, &normalized));
+            match merged {
+                Some(merged_yaml) => {
+                    rebuild_markdown_with_raw_frontmatter(&merged_yaml, &imports, &content)?
+                }
+                None => rebuild_markdown_with_frontmatter_and_imports_ordered(
+                    &fm,
+                    &imports,
+                    &content,
+                    schema_field_order,
+                )?,
+            }
+        }
         // Frontmatter unchanged - preserve original (non-empty)
         (None, Some(ref raw)) if !raw.trim().is_empty() => {
             rebuild_markdown_with_raw_frontmatter(raw, &imports, &content)?
@@ -723,6 +739,146 @@ fn rebuild_markdown_with_frontmatter_and_imports_ordered(
     }
 
     Ok(result)
+}
+
+/// Splits a raw frontmatter line into a top-level `key` and the rest, when it
+/// looks like a plain top-level mapping entry (`key: ...` at column 0).
+fn split_top_level_key(line: &str) -> Option<(&str, &str)> {
+    let first = line.chars().next()?;
+    if first.is_whitespace() || first == '#' || first == '-' {
+        return None;
+    }
+    let colon = line.find(':')?;
+    let key = &line[..colon];
+    if key.is_empty()
+        || !key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
+        return None;
+    }
+    // `key:value` without a space is not a mapping entry in YAML
+    let rest = &line[colon + 1..];
+    if !rest.is_empty() && !rest.starts_with(' ') {
+        return None;
+    }
+    Some((key, rest))
+}
+
+/// Serializes one key/value pair as a YAML mapping entry, matching the
+/// original line's single-quote style for plain string values.
+fn serialize_yaml_entry(
+    key: &str,
+    value: &Value,
+    original_first_line: Option<&str>,
+) -> Result<String, String> {
+    if let (Value::String(s), Some(orig)) = (value, original_first_line) {
+        let after_colon = orig
+            .split_once(':')
+            .map(|(_, rest)| rest.trim_start())
+            .unwrap_or("");
+        if after_colon.starts_with('\'') && !s.contains('\n') {
+            return Ok(format!("{}: '{}'\n", key, s.replace('\'', "''")));
+        }
+    }
+    let mut single: IndexMap<String, Value> = IndexMap::new();
+    single.insert(key.to_string(), value.clone());
+    serde_norway::to_string(&single).map_err(|e| format!("Failed to serialize YAML: {e}"))
+}
+
+/// One top-level frontmatter field with its original lines, plus any comment
+/// or blank lines that directly precede it.
+struct RawSegment {
+    key: String,
+    leading: Vec<String>,
+    lines: Vec<String>,
+}
+
+/// Merges edited frontmatter values into the original raw frontmatter text,
+/// preserving the file's own field order, quoting style, comments, and blank
+/// lines for fields whose values did not change. Changed fields are
+/// re-serialized in place, removed fields are dropped, and new fields are
+/// appended at the end.
+///
+/// Returns None when the original doesn't fit the simple top-level-mapping
+/// model or when the merged text does not round-trip to exactly the intended
+/// values; the caller then falls back to the full rebuild, so this is purely
+/// a formatting improvement, never a correctness risk.
+fn merge_frontmatter_preserving_format(
+    raw_frontmatter: &str,
+    new_frontmatter: &IndexMap<String, Value>,
+) -> Option<String> {
+    let original = parse_yaml_to_json(raw_frontmatter).ok()?;
+
+    // Segment the raw text by top-level keys
+    let mut segments: Vec<RawSegment> = Vec::new();
+    let mut pending: Vec<String> = Vec::new();
+    let mut has_current = false;
+    for line in raw_frontmatter.lines() {
+        if let Some((key, _)) = split_top_level_key(line) {
+            segments.push(RawSegment {
+                key: key.to_string(),
+                leading: std::mem::take(&mut pending),
+                lines: vec![line.to_string()],
+            });
+            has_current = true;
+        } else if line.trim().is_empty() || line.trim_start().starts_with('#') {
+            pending.push(line.to_string());
+        } else if has_current
+            && (line.starts_with(' ')
+                || line.starts_with('\t')
+                || line.starts_with("- ")
+                || line == "-")
+        {
+            let current = segments.last_mut()?;
+            current.lines.append(&mut pending);
+            current.lines.push(line.to_string());
+        } else {
+            // Anything else (flow mappings, quoted keys, unindented
+            // continuations) is outside the simple model
+            return None;
+        }
+    }
+
+    // Rebuild: original order first, changed values re-serialized in place
+    let mut out: Vec<String> = Vec::new();
+    for segment in &segments {
+        let Some(new_value) = new_frontmatter.get(&segment.key) else {
+            continue; // field removed
+        };
+        out.extend(segment.leading.iter().cloned());
+        if original.get(&segment.key) == Some(new_value) {
+            out.extend(segment.lines.iter().cloned());
+        } else {
+            let entry =
+                serialize_yaml_entry(&segment.key, new_value, segment.lines.first().map(|s| s.as_str()))
+                    .ok()?;
+            out.extend(entry.lines().map(String::from));
+        }
+    }
+
+    // Append fields that are new to this file, in panel order
+    for (key, value) in new_frontmatter {
+        if !segments.iter().any(|s| &s.key == key) {
+            let entry = serialize_yaml_entry(key, value, None).ok()?;
+            out.extend(entry.lines().map(String::from));
+        }
+    }
+
+    // Trailing comments or blank lines
+    out.append(&mut pending);
+
+    let mut merged = out.join("\n");
+    merged.push('\n');
+
+    // Round-trip guard: the merged text must parse back to exactly the
+    // intended values, or we don't use it.
+    let reparsed = parse_yaml_to_json(&merged).ok()?;
+    if reparsed != *new_frontmatter {
+        return None;
+    }
+
+    Some(merged)
 }
 
 /// Rebuild markdown file preserving original raw frontmatter (no normalization)
@@ -2887,5 +3043,135 @@ X"#;
         let saved = "Just some content.\n\n";
         let parsed = parse_frontmatter(saved).unwrap();
         assert_eq!(parsed.content, saved);
+    }
+}
+
+#[cfg(test)]
+mod frontmatter_merge_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn fm(pairs: &[(&str, Value)]) -> IndexMap<String, Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
+    }
+
+    const WLOG_RAW: &str = "title: 'A City Walk in San Francisco'\ndescription: 'A Saturday afternoon walk: two Transamericas.'\npubDate: '2024-07-06'\nheroImage: '../../assets/hero/2026/07/sf-city-walk-cover.webp'\ncategory: 'Journal'\nlang: 'en'\ntranslationKey: 'a-city-walk-in-san-francisco'";
+
+    fn wlog_values() -> IndexMap<String, Value> {
+        fm(&[
+            ("title", json!("A City Walk in San Francisco")),
+            ("description", json!("A Saturday afternoon walk: two Transamericas.")),
+            ("pubDate", json!("2024-07-06")),
+            ("heroImage", json!("../../assets/hero/2026/07/sf-city-walk-cover.webp")),
+            ("category", json!("Journal")),
+            ("lang", json!("en")),
+            ("translationKey", json!("a-city-walk-in-san-francisco")),
+        ])
+    }
+
+    #[test]
+    fn unchanged_fields_keep_original_bytes_and_order() {
+        let mut new_fm = wlog_values();
+        new_fm.insert("title".to_string(), json!("A Better Walk"));
+
+        let merged = merge_frontmatter_preserving_format(WLOG_RAW, &new_fm).unwrap();
+        let lines: Vec<&str> = merged.lines().collect();
+        assert_eq!(lines[0], "title: 'A Better Walk'");
+        assert_eq!(lines[1], "description: 'A Saturday afternoon walk: two Transamericas.'");
+        assert_eq!(lines[2], "pubDate: '2024-07-06'");
+        assert_eq!(lines[6], "translationKey: 'a-city-walk-in-san-francisco'");
+        assert_eq!(lines.len(), 7);
+    }
+
+    #[test]
+    fn identical_values_reproduce_the_block_verbatim() {
+        let merged = merge_frontmatter_preserving_format(WLOG_RAW, &wlog_values()).unwrap();
+        assert_eq!(merged, format!("{WLOG_RAW}\n"));
+    }
+
+    #[test]
+    fn single_quote_style_escapes_inner_quotes() {
+        let mut new_fm = wlog_values();
+        new_fm.insert("title".to_string(), json!("it's a walk"));
+        let merged = merge_frontmatter_preserving_format(WLOG_RAW, &new_fm).unwrap();
+        assert!(merged.starts_with("title: 'it''s a walk'\n"), "got: {merged}");
+    }
+
+    #[test]
+    fn removed_fields_drop_and_new_fields_append() {
+        let mut new_fm = wlog_values();
+        new_fm.shift_remove("category");
+        new_fm.insert("draft".to_string(), json!(true));
+
+        let merged = merge_frontmatter_preserving_format(WLOG_RAW, &new_fm).unwrap();
+        assert!(!merged.contains("category"));
+        assert!(merged.ends_with("draft: true\n"), "got: {merged}");
+    }
+
+    #[test]
+    fn comments_and_blank_lines_are_preserved() {
+        let raw = "# owner note\ntitle: 'X'\n\npubDate: '2024-07-06'";
+        let new_fm = fm(&[("title", json!("Y")), ("pubDate", json!("2024-07-06"))]);
+        let merged = merge_frontmatter_preserving_format(raw, &new_fm).unwrap();
+        assert_eq!(merged, "# owner note\ntitle: 'Y'\n\npubDate: '2024-07-06'\n");
+    }
+
+    #[test]
+    fn multiline_values_are_kept_when_unchanged() {
+        let raw = "title: 'X'\ntags:\n  - one\n  - two";
+        let new_fm = fm(&[("title", json!("X")), ("tags", json!(["one", "two"]))]);
+        let merged = merge_frontmatter_preserving_format(raw, &new_fm).unwrap();
+        assert_eq!(merged, "title: 'X'\ntags:\n  - one\n  - two\n");
+    }
+
+    #[test]
+    fn falls_back_on_flow_mapping() {
+        let raw = "{title: X, lang: en}";
+        let new_fm = fm(&[("title", json!("X")), ("lang", json!("en"))]);
+        assert!(merge_frontmatter_preserving_format(raw, &new_fm).is_none());
+    }
+
+    #[test]
+    fn unquoted_scalars_stay_unquoted_via_serde() {
+        let raw = "title: plain words\ncount: 3";
+        let new_fm = fm(&[("title", json!("plain words")), ("count", json!(5))]);
+        let merged = merge_frontmatter_preserving_format(raw, &new_fm).unwrap();
+        assert_eq!(merged, "title: plain words\ncount: 5\n");
+    }
+
+    #[test]
+    fn save_markdown_uses_merge_when_raw_present() {
+        let dir = std::env::temp_dir().join(format!(
+            "ae-merge-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("post.md");
+        std::fs::write(&file, "seed").unwrap();
+
+        let mut new_fm = wlog_values();
+        new_fm.insert("title".to_string(), json!("Edited Title"));
+
+        tauri::async_runtime::block_on(save_markdown_content(
+            file.to_string_lossy().to_string(),
+            Some(new_fm),
+            Some(WLOG_RAW.to_string()),
+            "Body text.".to_string(),
+            String::new(),
+            None,
+            dir.to_string_lossy().to_string(),
+        ))
+        .unwrap();
+
+        let written = std::fs::read_to_string(&file).unwrap();
+        assert!(written.starts_with("---\ntitle: 'Edited Title'\ndescription: 'A Saturday afternoon walk: two Transamericas.'\n"), "got: {written}");
+        assert!(written.contains("translationKey: 'a-city-walk-in-san-francisco'\n---\n"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

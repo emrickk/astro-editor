@@ -117,13 +117,16 @@ export function useEditorActions() {
           }
         }
 
-        // Only pass frontmatter object if it was edited, otherwise pass raw to preserve formatting
+        // Pass the frontmatter object only when it was edited. The raw block
+        // always goes along: it preserves formatting verbatim when untouched,
+        // and serves as the formatting template for the format-preserving
+        // merge when fields were edited.
         const result = await commands.saveMarkdownContent(
           currentFile.path,
           isFrontmatterDirty
             ? (frontmatter as Partial<Record<string, JsonValue>>)
             : null,
-          isFrontmatterDirty ? null : rawFrontmatter,
+          rawFrontmatter,
           editorContent,
           imports,
           schemaFieldOrder,
