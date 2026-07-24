@@ -138,7 +138,7 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
           </span>
         ) : (
           <span className="text-sm font-medium text-muted-foreground">
-            Astro Editor
+            Nevertheless Editor
           </span>
         )}
       </div>

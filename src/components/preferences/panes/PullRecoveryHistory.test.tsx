@@ -38,7 +38,7 @@ function mockRecoveryCommands(items: PullRecovery[] = [recovery]): void {
   globalThis.mockTauri.invoke.mockImplementation((command: string) => {
     if (command === 'list_pull_recoveries') return Promise.resolve(items)
     if (command === 'restore_pull_recovery')
-      return Promise.resolve('/Desktop/Astro Editor Recovery')
+      return Promise.resolve('/Desktop/Nevertheless Editor Recovery')
     if (command === 'delete_pull_recovery') return Promise.resolve(null)
     return Promise.resolve(null)
   })
@@ -85,7 +85,7 @@ describe('PullRecoveryHistory', () => {
     expect(toastMock.success).toHaveBeenCalledWith(
       'Safety copies restored',
       expect.objectContaining({
-        description: 'Saved in /Desktop/Astro Editor Recovery',
+        description: 'Saved in /Desktop/Nevertheless Editor Recovery',
       })
     )
     expect(screen.getByText('src/content/posts/draft.md')).toBeInTheDocument()
@@ -345,7 +345,7 @@ describe('PullRecoveryHistory', () => {
 
     rerender(<PullRecoveryHistory projectPath="/new" />)
     await screen.findByText('src/content/posts/new-project.md')
-    act(() => finishRestore?.('/Desktop/Astro Editor Recovery'))
+    act(() => finishRestore?.('/Desktop/Nevertheless Editor Recovery'))
 
     await waitFor(() => expect(getActiveProjectOperation()).toBeNull())
     expect(toastMock.success).not.toHaveBeenCalled()

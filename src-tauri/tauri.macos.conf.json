@@ -3,7 +3,7 @@
   "app": {
     "windows": [
       {
-        "title": "Astro Editor",
+        "title": "Nevertheless Editor",
         "width": 1400,
         "height": 900,
         "minWidth": 1000,

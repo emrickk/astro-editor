@@ -99,8 +99,8 @@ export const WindowsMenu: React.FC = () => {
     }
 
     await message(
-      `Astro Editor\nVersion ${version}\n\nA native markdown editor for Astro content collections.\n\nBuilt with Tauri and React.`,
-      { title: 'About Astro Editor', kind: 'info' }
+      `Nevertheless Editor\nVersion ${version}\n\nA native markdown editor for Astro content collections.\n\nBuilt with Tauri and React.`,
+      { title: 'About Nevertheless Editor', kind: 'info' }
     )
   }
 
@@ -162,7 +162,7 @@ export const WindowsMenu: React.FC = () => {
           <DropdownMenuShortcut>Ctrl+,</DropdownMenuShortcut>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => void handleAbout()}>
-          About Astro Editor
+          About Nevertheless Editor
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />

@@ -124,23 +124,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     void (async () => {
       try {
         await info(
-          `Astro Editor [PROJECT_SETUP] Starting project setup: ${path}`
+          `Nevertheless Editor [PROJECT_SETUP] Starting project setup: ${path}`
         )
         if (!isCurrentProjectSwitch(generation, operationLease)) return
 
         // Register the project and get its ID
-        await info(`Astro Editor [PROJECT_SETUP] Registering project: ${path}`)
+        await info(
+          `Nevertheless Editor [PROJECT_SETUP] Registering project: ${path}`
+        )
         if (!isCurrentProjectSwitch(generation, operationLease)) return
         const projectId = await projectRegistryManager.registerProject(path)
         if (!isCurrentProjectSwitch(generation, operationLease)) return
         await debug(
-          `Astro Editor [PROJECT_SETUP] Project ID generated: ${projectId}`
+          `Nevertheless Editor [PROJECT_SETUP] Project ID generated: ${projectId}`
         )
         if (!isCurrentProjectSwitch(generation, operationLease)) return
 
         // Load project settings
         await info(
-          `Astro Editor [PROJECT_SETUP] Loading project settings for: ${projectId}`
+          `Nevertheless Editor [PROJECT_SETUP] Loading project settings for: ${projectId}`
         )
         if (!isCurrentProjectSwitch(generation, operationLease)) return
         const projectSettings =
@@ -157,13 +159,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
         // Project persistence is now handled by the project registry system
 
-        await info(`Astro Editor [PROJECT_SETUP] Starting file watcher`)
+        await info(`Nevertheless Editor [PROJECT_SETUP] Starting file watcher`)
         if (!isCurrentProjectSwitch(generation, operationLease)) return
         await get().startFileWatcher()
         if (!isCurrentProjectSwitch(generation, operationLease)) return
 
         await info(
-          `Astro Editor [PROJECT_SETUP] Project setup completed successfully: ${projectId}`
+          `Nevertheless Editor [PROJECT_SETUP] Project setup completed successfully: ${projectId}`
         )
         if (!isCurrentProjectSwitch(generation, operationLease)) return
       } catch (error) {
@@ -270,7 +272,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // Listen for watcher recovery events
       const unlistenWatcherRescan = await listen('watcher-rescan', () => {
         void debug(
-          'Astro Editor [WATCHER] Periodic rescan — refreshing queries'
+          'Nevertheless Editor [WATCHER] Periodic rescan — refreshing queries'
         )
         void queryClient.invalidateQueries({
           queryKey: queryKeys.all,
@@ -279,7 +281,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       const unlistenWatcherRebuilt = await listen('watcher-rebuilt', () => {
         void info(
-          'Astro Editor [WATCHER] File watcher rebuilt after disconnection'
+          'Nevertheless Editor [WATCHER] File watcher rebuilt after disconnection'
         )
         void queryClient.invalidateQueries({
           queryKey: queryKeys.all,
@@ -368,7 +370,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // then switching). Bounded wait so we never hang on normal startup.
       if (await wasStartupClaimedByDeepLink()) {
         await info(
-          'Astro Editor [PROJECT_SETUP] Deep link claimed startup - skipping persisted project load'
+          'Nevertheless Editor [PROJECT_SETUP] Deep link claimed startup - skipping persisted project load'
         )
         return
       }
@@ -419,13 +421,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   initializeProjectRegistry: async () => {
     try {
       await info(
-        'Astro Editor [PROJECT_REGISTRY] Initializing project registry'
+        'Nevertheless Editor [PROJECT_REGISTRY] Initializing project registry'
       )
       await projectRegistryManager.initialize()
       const globalSettings = projectRegistryManager.getGlobalSettings()
       set({ globalSettings })
       await info(
-        'Astro Editor [PROJECT_REGISTRY] Project registry initialized successfully'
+        'Nevertheless Editor [PROJECT_REGISTRY] Project registry initialized successfully'
       )
     } catch (error) {
       const errorMsg = formatErrorForLogging(
@@ -445,7 +447,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       // Don't throw - allow app to continue without registry if needed
       await info(
-        'Astro Editor [PROJECT_REGISTRY] Continuing without registry - some features may be limited'
+        'Nevertheless Editor [PROJECT_REGISTRY] Continuing without registry - some features may be limited'
       )
     }
   },
@@ -481,13 +483,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         if (currentFile) {
           // Auto-save current file before settings change
           await info(
-            'Astro Editor [PREFERENCES] Path settings changing while file is open - auto-saving'
+            'Nevertheless Editor [PREFERENCES] Path settings changing while file is open - auto-saving'
           )
           try {
             await useEditorStore.getState().saveFile()
           } catch (saveError) {
             await logError(
-              `Astro Editor [PREFERENCES] Failed to auto-save before settings change: ${String(saveError)}`
+              `Nevertheless Editor [PREFERENCES] Failed to auto-save before settings change: ${String(saveError)}`
             )
           }
 
@@ -533,7 +535,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
           // Restart file watcher with new paths
           await info(
-            'Astro Editor [PREFERENCES] Path overrides changed - restarting file watcher'
+            'Nevertheless Editor [PREFERENCES] Path overrides changed - restarting file watcher'
           )
           await get().stopFileWatcher()
           await get().startFileWatcher()

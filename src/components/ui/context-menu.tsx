@@ -52,7 +52,7 @@ export class FileContextMenu {
   ): Promise<boolean> {
     return ask(
       withSibling
-        ? `Delete "${fileName}" and its verified translation file? Both files will be kept in Astro Editor's recovery folder and can be restored with Undo.`
+        ? `Delete "${fileName}" and its verified translation file? Both files will be kept in Nevertheless Editor's recovery folder and can be restored with Undo.`
         : `Delete "${fileName}"? A recovery copy will be kept and can be restored with Undo.`,
       {
         title: 'Delete Post',

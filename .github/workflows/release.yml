@@ -1,4 +1,4 @@
-name: 'Release Astro Editor'
+name: 'Release Nevertheless Editor'
 
 on:
   push:
@@ -39,8 +39,8 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: tag,
-              name: `Astro Editor ${tag}`,
-              body: `## Astro Editor ${tag}\n`,
+              name: `Nevertheless Editor ${tag}`,
+              body: `## Nevertheless Editor ${tag}\n`,
               draft: true,
               prerelease: false,
             })
@@ -146,9 +146,10 @@ jobs:
 
   # Publish stable-named copies of each installer plus a SHA256SUMS file to the
   # draft release. The website links to these stable URLs
-  # (/releases/latest/download/astro-editor-latest.*), so we never commit
-  # installers to the repo. tauri-action names assets with the version, so we
-  # add fixed-name copies here.
+  # (/releases/latest/download/nevertheless-editor-latest.*), so we never commit
+  # installers to the repo. Legacy astro-editor-latest aliases remain available
+  # for existing links. tauri-action names assets with the version, so we add
+  # fixed-name copies here.
   publish-stable-assets:
     needs: publish-tauri
     runs-on: ubuntu-latest
@@ -185,11 +186,16 @@ jobs:
             cp "$match" "$dest"
             echo "Stable copy: $match -> $dest"
           }
-          copy_stable '*.dmg' astro-editor-latest.dmg
-          copy_stable '*.msi' astro-editor-latest.msi
-          copy_stable '*.AppImage' astro-editor-latest.AppImage
-          copy_stable '*.deb' astro-editor-latest.deb
-          copy_stable '*.rpm' astro-editor-latest.rpm
+          copy_stable '*.dmg' nevertheless-editor-latest.dmg
+          copy_stable '*.msi' nevertheless-editor-latest.msi
+          copy_stable '*.AppImage' nevertheless-editor-latest.AppImage
+          copy_stable '*.deb' nevertheless-editor-latest.deb
+          copy_stable '*.rpm' nevertheless-editor-latest.rpm
+          cp nevertheless-editor-latest.dmg astro-editor-latest.dmg
+          cp nevertheless-editor-latest.msi astro-editor-latest.msi
+          cp nevertheless-editor-latest.AppImage astro-editor-latest.AppImage
+          cp nevertheless-editor-latest.deb astro-editor-latest.deb
+          cp nevertheless-editor-latest.rpm astro-editor-latest.rpm
 
       - name: Generate SHA256SUMS
         working-directory: /tmp/release
@@ -210,7 +216,6 @@ jobs:
         working-directory: /tmp/release
         run: |
           shopt -s nullglob
-          to_upload=( astro-editor-latest.* SHA256SUMS )
+          to_upload=( nevertheless-editor-latest.* astro-editor-latest.* SHA256SUMS )
           gh release upload "$RELEASE_TAG" --clobber "${to_upload[@]}"
           echo "Uploaded: ${to_upload[*]}"
-

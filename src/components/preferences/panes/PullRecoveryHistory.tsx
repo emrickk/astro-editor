@@ -230,9 +230,9 @@ const PullRecoveryHistoryForProject: React.FC<PullRecoveryHistoryProps> = ({
           <div className="space-y-1">
             <p className="text-sm font-medium">Saved during a cautious Pull</p>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              If a file changes while Pull is finishing, Astro Editor keeps the
-              newest copy here. Restore places copies in a folder you choose and
-              never overwrites the project.
+              If a file changes while Pull is finishing, Nevertheless Editor
+              keeps the newest copy here. Restore places copies in a folder you
+              choose and never overwrites the project.
             </p>
           </div>
         </div>

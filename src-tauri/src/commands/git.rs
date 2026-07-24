@@ -1581,9 +1581,15 @@ fn materialize_tree_delta(
 fn temporary_index_environment(index: &Path) -> [(&str, &OsStr); 5] {
     [
         ("GIT_INDEX_FILE", index.as_os_str()),
-        ("GIT_AUTHOR_NAME", OsStr::new("Astro Editor Recovery")),
+        (
+            "GIT_AUTHOR_NAME",
+            OsStr::new("Nevertheless Editor Recovery"),
+        ),
         ("GIT_AUTHOR_EMAIL", OsStr::new("recovery@localhost")),
-        ("GIT_COMMITTER_NAME", OsStr::new("Astro Editor Recovery")),
+        (
+            "GIT_COMMITTER_NAME",
+            OsStr::new("Nevertheless Editor Recovery"),
+        ),
         ("GIT_COMMITTER_EMAIL", OsStr::new("recovery@localhost")),
     ]
 }
@@ -1625,7 +1631,7 @@ fn synthetic_commit(root: &Path, index: &Path, tree: &str, parent: &str) -> Resu
         "-p".to_string(),
         parent.to_string(),
         "-m".to_string(),
-        "Astro Editor safe Pull recovery".to_string(),
+        "Nevertheless Editor safe Pull recovery".to_string(),
     ];
     let environment = temporary_index_environment(index);
     let output = run_git(root, &args, &environment, None)?;
@@ -2426,9 +2432,9 @@ fn create_recovery_copy_directory(destination: &Path, id: &str) -> Result<PathBu
         .ok_or_else(|| "Invalid Pull recovery id".to_string())?;
     for attempt in 0..100_u8 {
         let name = if attempt == 0 {
-            format!("Astro Editor Recovery {suffix}")
+            format!("Nevertheless Editor Recovery {suffix}")
         } else {
-            format!("Astro Editor Recovery {suffix} {attempt}")
+            format!("Nevertheless Editor Recovery {suffix} {attempt}")
         };
         let path = destination.join(name);
         match fs::create_dir(&path) {
@@ -3003,7 +3009,7 @@ mod tests {
     }
 
     fn configure(root: &Path) {
-        test_git(root, &["config", "user.name", "Astro Editor Test"]);
+        test_git(root, &["config", "user.name", "Nevertheless Editor Test"]);
         test_git(root, &["config", "user.email", "test@localhost"]);
     }
 

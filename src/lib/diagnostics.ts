@@ -100,7 +100,7 @@ export function formatErrorForLogging(
     error?: Error | string
   }
 ): string {
-  let logMessage = `Astro Editor [${tag}] ${message}`
+  let logMessage = `Nevertheless Editor [${tag}] ${message}`
 
   if (context?.step) {
     logMessage += ` - Step: ${context.step}`

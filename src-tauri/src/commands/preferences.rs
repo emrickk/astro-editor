@@ -62,7 +62,7 @@ pub async fn reset_all_preferences(
         .map_err(|e| format!("Failed to resolve app data directory: {e}"))?;
 
     info!(
-        "Astro Editor [PREFERENCES] Resetting all preferences - deleting: {}",
+        "Nevertheless Editor [PREFERENCES] Resetting all preferences - deleting: {}",
         app_data_dir.display()
     );
 
@@ -71,13 +71,13 @@ pub async fn reset_all_preferences(
         std::fs::remove_dir_all(&app_data_dir)
             .map_err(|e| format!("Failed to delete preferences: {e}"))?;
 
-        info!("Astro Editor [PREFERENCES] All preferences deleted successfully");
+        info!("Nevertheless Editor [PREFERENCES] All preferences deleted successfully");
     } else {
-        info!("Astro Editor [PREFERENCES] No preferences directory found to delete");
+        info!("Nevertheless Editor [PREFERENCES] No preferences directory found to delete");
     }
 
     // Restart the application
-    info!("Astro Editor [PREFERENCES] Restarting application");
+    info!("Nevertheless Editor [PREFERENCES] Restarting application");
 
     // Close all windows first
     let _ = window.close();

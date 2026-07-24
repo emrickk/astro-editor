@@ -305,7 +305,7 @@ async function stopReviewServer(id: string | null): Promise<void> {
 
 function reviewStopFailure(error: unknown): string {
   const detail = error instanceof Error ? error.message : String(error)
-  return `Astro Editor could not confirm that the review server stopped: ${detail}. Retry before continuing.`
+  return `Nevertheless Editor could not confirm that the review server stopped: ${detail}. Retry before continuing.`
 }
 
 export const usePublishStore = create<PublishState & PublishActions>(

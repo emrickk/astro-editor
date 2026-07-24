@@ -106,15 +106,19 @@ export function needsProjectDataMigration(
 export async function migrateGlobalSettingsWithLogging(
   oldSettings: Record<string, unknown>
 ): Promise<GlobalSettings> {
-  await info('Astro Editor [MIGRATION] Migrating global settings from v1 to v2')
+  await info(
+    'Nevertheless Editor [MIGRATION] Migrating global settings from v1 to v2'
+  )
 
   try {
     const migrated = migrateGlobalSettingsV1toV2(oldSettings)
-    await info('Astro Editor [MIGRATION] Global settings migration completed')
+    await info(
+      'Nevertheless Editor [MIGRATION] Global settings migration completed'
+    )
     return migrated
   } catch (err) {
     await logError(
-      `Astro Editor [MIGRATION] Failed to migrate global settings: ${String(err)}`
+      `Nevertheless Editor [MIGRATION] Failed to migrate global settings: ${String(err)}`
     )
     throw err
   }
@@ -128,18 +132,18 @@ export async function migrateProjectDataWithLogging(
   oldProjectData: Record<string, unknown>
 ): Promise<ProjectData> {
   await info(
-    `Astro Editor [MIGRATION] Migrating project data for ${projectId} from v1 to v2`
+    `Nevertheless Editor [MIGRATION] Migrating project data for ${projectId} from v1 to v2`
   )
 
   try {
     const migrated = migrateProjectDataV1toV2(oldProjectData)
     await info(
-      `Astro Editor [MIGRATION] Project data migration completed for ${projectId}`
+      `Nevertheless Editor [MIGRATION] Project data migration completed for ${projectId}`
     )
     return migrated
   } catch (err) {
     await logError(
-      `Astro Editor [MIGRATION] Failed to migrate project data for ${projectId}: ${String(err)}`
+      `Nevertheless Editor [MIGRATION] Failed to migrate project data for ${projectId}: ${String(err)}`
     )
     throw err
   }

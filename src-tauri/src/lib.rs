@@ -3,7 +3,6 @@ mod commands;
 mod models;
 mod parser;
 mod schema_merger;
-mod telemetry;
 mod utils;
 
 use std::collections::HashMap;
@@ -93,20 +92,9 @@ pub fn run() {
         .setup(|app| {
             // Log app startup information
             let package_info = app.package_info();
-            log::info!("Astro Editor v{} starting up", package_info.version);
+            log::info!("Nevertheless Editor v{} starting up", package_info.version);
             log::info!("Platform: {}", std::env::consts::OS);
             log::info!("Architecture: {}", std::env::consts::ARCH);
-
-            // Send telemetry on startup (non-blocking, fails silently)
-            let app_handle = app.handle().clone();
-            let version = package_info.version.to_string();
-            tauri::async_runtime::spawn(async move {
-                if let Ok(app_data_dir) = app_handle.path().app_local_data_dir() {
-                    if let Err(e) = telemetry::send_telemetry_event(app_data_dir, version).await {
-                        log::warn!("Telemetry event failed (this is expected and safe to ignore): {e}");
-                    }
-                }
-            });
 
             // Fix PATH environment variable for production builds
             // This ensures shell commands can find executables like 'code', 'cursor', etc.
@@ -245,21 +233,21 @@ pub fn run() {
 
             let app_menu = Submenu::with_items(
                 app,
-                "Astro Editor",
+                "Nevertheless Editor",
                 true,
                 &[
-                    &MenuItem::with_id(app, "about", "About Astro Editor", true, None::<&str>)?,
+                    &MenuItem::with_id(app, "about", "About Nevertheless Editor", true, None::<&str>)?,
                     &PredefinedMenuItem::separator(app)?,
                     &MenuItem::with_id(app, "preferences", "Preferences...", true, Some("Cmd+,"))?,
                     &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::hide(app, Some("Hide Astro Editor"))?,
+                    &PredefinedMenuItem::hide(app, Some("Hide Nevertheless Editor"))?,
                     &PredefinedMenuItem::hide_others(app, Some("Hide Others"))?,
                     &PredefinedMenuItem::show_all(app, Some("Show All"))?,
                     &PredefinedMenuItem::separator(app)?,
                     &MenuItem::with_id(
                         app,
                         "quit",
-                        "Quit Astro Editor",
+                        "Quit Nevertheless Editor",
                         true,
                         Some("CmdOrCtrl+Q"),
                     )?,
@@ -274,7 +262,7 @@ pub fn run() {
                     &MenuItem::with_id(
                         app,
                         "help_user_guide",
-                        "Astro Editor User Guide",
+                        "Nevertheless Editor User Guide",
                         true,
                         None::<&str>,
                     )?,
@@ -339,7 +327,7 @@ pub fn run() {
                         );
                         let _ = app_handle.dialog()
                             .message(message)
-                            .title("About Astro Editor")
+                            .title("About Nevertheless Editor")
                             .kind(MessageDialogKind::Info)
                             .blocking_show();
                     });

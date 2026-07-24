@@ -79,7 +79,7 @@ pub async fn fetch_release_notes(
         .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
     let releases: Vec<GitHubRelease> = client
-        .get("https://api.github.com/repos/dannysmith/astro-editor/releases?per_page=100")
+        .get("https://api.github.com/repos/emrickk/astro-editor/releases?per_page=100")
         .send()
         .await
         .map_err(|e| format!("Failed to fetch releases: {e}"))?

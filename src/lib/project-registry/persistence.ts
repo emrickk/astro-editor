@@ -128,7 +128,7 @@ export async function loadGlobalSettings(): Promise<GlobalSettings> {
     // Check if migration is needed
     if (needsGlobalSettingsMigration(rawSettings)) {
       await info(
-        'Astro Editor [PREFERENCES] Global settings v1 detected, migrating to v2'
+        'Nevertheless Editor [PREFERENCES] Global settings v1 detected, migrating to v2'
       )
 
       // Migrate the settings
@@ -139,7 +139,7 @@ export async function loadGlobalSettings(): Promise<GlobalSettings> {
       await saveGlobalSettings(migratedSettings)
 
       await info(
-        'Astro Editor [PREFERENCES] Global settings migration completed and saved'
+        'Nevertheless Editor [PREFERENCES] Global settings migration completed and saved'
       )
 
       return migratedSettings
@@ -219,7 +219,7 @@ export async function loadProjectData(
     // Check if migration is needed
     if (needsProjectDataMigration(rawData)) {
       await info(
-        `Astro Editor [PREFERENCES] Project data v1 detected for ${projectId}, migrating to v2`
+        `Nevertheless Editor [PREFERENCES] Project data v1 detected for ${projectId}, migrating to v2`
       )
 
       // Migrate the project data
@@ -232,7 +232,7 @@ export async function loadProjectData(
       await saveProjectData(projectId, migratedData)
 
       await info(
-        `Astro Editor [PREFERENCES] Project data migration completed and saved for ${projectId}`
+        `Nevertheless Editor [PREFERENCES] Project data migration completed and saved for ${projectId}`
       )
 
       return migratedData

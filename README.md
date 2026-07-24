@@ -1,6 +1,6 @@
-# Astro Editor
+# Nevertheless Editor
 
-![Screenshots of Astro Editor](docs/assets/header.png)
+![Screenshots of Nevertheless Editor](docs/assets/header.png)
 
 A native macOS markdown editor for Astro content collections. Clean writing interface with automatic frontmatter editing based on your collection schemas.
 
@@ -66,17 +66,13 @@ my-astro-site
 
 ## Installation
 
-Download the [latest Release](https://github.com/dannysmith/astro-editor/releases) or install with Homebrew:
-
-```
-brew install --cask astro-editor
-```
+Download the [latest release](https://github.com/emrickk/astro-editor/releases).
 
 **Other Platforms:** Windows (.msi) and Linux (.AppImage, .deb) builds are available from the releases page but are not officially supported yet. Use at your own risk.
 
 ## Documentation
 
-- **[Documentation](https://astroeditor.danny.is/getting-started/)** - Complete feature documentation
+- **[Upstream documentation](https://astroeditor.danny.is/getting-started/)** - Complete feature documentation
 - **[Contributing](docs/CONTRIBUTING.md)** - Development setup and guidelines
 
 ## Disclaimer
@@ -85,7 +81,7 @@ Work in progress. Commit your Astro project regularly when using the editor.
 
 ## Contributing
 
-Bug reports and feature requests are welcome. See the [issue tracker](https://github.com/dannysmith/astro-editor/issues).
+Bug reports and feature requests are welcome. See the [issue tracker](https://github.com/emrickk/astro-editor/issues).
 
 **Project Philosophy:**
 
@@ -96,10 +92,11 @@ Pull requests welcome. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for developme
 
 ## Roadmap
 
-See the [GitHub Project](https://github.com/users/dannysmith/projects/5/)
+See the [upstream GitHub Project](https://github.com/users/dannysmith/projects/5/).
 
 ## Credits
 
+- Based on [Astro Editor](https://github.com/dannysmith/astro-editor) by Danny Smith.
 - [iA Writer](https://ia.net/writer) for inspiration and [typography](https://github.com/iaolo/iA-Fonts)
 - [DarkMatter](https://getdarkmatter.dev/) by [Vadim Demedes](https://vadimdemedes.com/)
 

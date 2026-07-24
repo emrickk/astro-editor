@@ -338,7 +338,7 @@ export const helpCommands: AppCommand[] = [
   {
     id: 'open-user-guide',
     label: 'User Guide',
-    description: 'Open the Astro Editor documentation in your browser',
+    description: 'Open the editor documentation in your browser',
     icon: BookOpen,
     group: 'help',
     execute: async () => {

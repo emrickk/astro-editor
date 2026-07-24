@@ -12,7 +12,9 @@ const WelcomeScreen: React.FC = () => {
   return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center text-muted-foreground flex flex-col gap-4">
-        <h2 className="m-0 text-2xl font-light">Welcome to Astro Editor</h2>
+        <h2 className="m-0 text-2xl font-light">
+          Welcome to Nevertheless Editor
+        </h2>
         <p className="m-0 text-sm">
           Select a project folder to get started, then choose a file to edit.
         </p>

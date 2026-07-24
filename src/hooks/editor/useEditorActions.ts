@@ -263,7 +263,7 @@ export function useEditorActions() {
     // Only Markdown/MDX files are openable.
     const lower = filePath.toLowerCase()
     if (!lower.endsWith('.md') && !lower.endsWith('.mdx')) {
-      toast.error('Astro Editor can only open .md or .mdx files')
+      toast.error('Nevertheless Editor can only open .md or .mdx files')
       return
     }
 
@@ -283,10 +283,13 @@ export function useEditorActions() {
 
     const owningProjectPath = findOwningProjectPath(knownProjectPaths, filePath)
     if (!owningProjectPath) {
-      toast.error("That file isn't in a project Astro Editor knows about", {
-        description:
-          'Open the project once, then links to its files will work.',
-      })
+      toast.error(
+        "That file isn't in a project Nevertheless Editor knows about",
+        {
+          description:
+            'Open the project once, then links to its files will work.',
+        }
+      )
       return
     }
 

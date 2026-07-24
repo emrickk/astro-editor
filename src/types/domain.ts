@@ -1,5 +1,5 @@
 /**
- * Domain types for Astro Editor.
+ * Domain types for Nevertheless Editor.
  *
  * These types are auto-generated from Rust structs via tauri-specta.
  * This file re-exports them with JSDoc documentation for IDE support.

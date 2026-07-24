@@ -53,7 +53,7 @@ export async function discoverProject(
     // Try to read package.json
     const packageJsonPath = `${projectPath}/package.json`
     await safeLog.debug(
-      `Astro Editor [PROJECT_DISCOVERY] Reading package.json: ${packageJsonPath}`
+      `Nevertheless Editor [PROJECT_DISCOVERY] Reading package.json: ${packageJsonPath}`
     )
 
     const result = await commands.readFileContent(packageJsonPath, projectPath)
@@ -67,11 +67,11 @@ export async function discoverProject(
       packageJson.name || projectPath.split('/').pop() || 'unknown-project'
 
     await safeLog.info(
-      `Astro Editor [PROJECT_DISCOVERY] Project name found: ${name}`
+      `Nevertheless Editor [PROJECT_DISCOVERY] Project name found: ${name}`
     )
     const projectId = generateProjectId(name, projectPath, existingIds)
     await safeLog.debug(
-      `Astro Editor [PROJECT_DISCOVERY] Generated project ID: ${projectId}`
+      `Nevertheless Editor [PROJECT_DISCOVERY] Generated project ID: ${projectId}`
     )
 
     return {
@@ -84,16 +84,16 @@ export async function discoverProject(
   } catch (error) {
     // Fallback if package.json doesn't exist or is invalid
     await safeLog.error(
-      `Astro Editor [PROJECT_DISCOVERY] Package.json read failed for ${projectPath}: ${String(error)}`
+      `Nevertheless Editor [PROJECT_DISCOVERY] Package.json read failed for ${projectPath}: ${String(error)}`
     )
     await safeLog.info(
-      `Astro Editor [PROJECT_DISCOVERY] Using fallback discovery for: ${projectPath}`
+      `Nevertheless Editor [PROJECT_DISCOVERY] Using fallback discovery for: ${projectPath}`
     )
 
     const name = projectPath.split('/').pop() || 'unknown-project'
     const projectId = generateProjectId(name, projectPath, existingIds)
     await safeLog.debug(
-      `Astro Editor [PROJECT_DISCOVERY] Fallback project ID: ${projectId}`
+      `Nevertheless Editor [PROJECT_DISCOVERY] Fallback project ID: ${projectId}`
     )
 
     return {

@@ -171,7 +171,7 @@ pub async fn select_project_folder(app: tauri::AppHandle) -> Result<Option<Strin
 #[tauri::command]
 #[specta::specta]
 pub async fn scan_project(project_path: String) -> Result<Vec<Collection>, String> {
-    info!("Astro Editor [PROJECT_SCAN] Scanning project at path: {project_path}");
+    info!("Nevertheless Editor [PROJECT_SCAN] Scanning project at path: {project_path}");
     scan_project_with_content_dir(project_path, None).await
 }
 
@@ -181,20 +181,20 @@ pub async fn scan_project_with_content_dir(
     project_path: String,
     content_directory: Option<String>,
 ) -> Result<Vec<Collection>, String> {
-    info!("Astro Editor [PROJECT_SCAN] Scanning project at path: {project_path}");
+    info!("Nevertheless Editor [PROJECT_SCAN] Scanning project at path: {project_path}");
     info!(
-        "Astro Editor [PROJECT_SCAN] Content directory: {:?}",
+        "Nevertheless Editor [PROJECT_SCAN] Content directory: {:?}",
         content_directory.as_deref().unwrap_or("src/content")
     );
 
     let path = PathBuf::from(&project_path);
 
     // Try to parse Astro config first
-    debug!("Astro Editor [PROJECT_SCAN] Attempting to parse Astro config");
+    debug!("Nevertheless Editor [PROJECT_SCAN] Attempting to parse Astro config");
     match parse_astro_config(&path, content_directory.as_deref()) {
         Ok(mut collections) if !collections.is_empty() => {
             info!(
-                "Astro Editor [PROJECT_SCAN] Found {} collections from Astro config",
+                "Nevertheless Editor [PROJECT_SCAN] Found {} collections from Astro config",
                 collections.len()
             );
 
@@ -204,7 +204,7 @@ pub async fn scan_project_with_content_dir(
                     load_json_schema_for_collection(&project_path, &collection.name)
                 {
                     debug!(
-                        "Astro Editor [PROJECT_SCAN] Loaded JSON schema for collection: {}",
+                        "Nevertheless Editor [PROJECT_SCAN] Loaded JSON schema for collection: {}",
                         collection.name
                     );
                     collection.json_schema = Some(json_schema);
@@ -219,7 +219,7 @@ pub async fn scan_project_with_content_dir(
             Ok(collections)
         }
         Ok(_) => {
-            debug!("Astro Editor [PROJECT_SCAN] Astro config returned empty collections, falling back to directory scan");
+            debug!("Nevertheless Editor [PROJECT_SCAN] Astro config returned empty collections, falling back to directory scan");
             let mut collections =
                 scan_content_directories_with_override(path.as_path(), content_directory)?;
 
@@ -229,7 +229,7 @@ pub async fn scan_project_with_content_dir(
                     load_json_schema_for_collection(&project_path, &collection.name)
                 {
                     debug!(
-                        "Astro Editor [PROJECT_SCAN] Loaded JSON schema for collection: {}",
+                        "Nevertheless Editor [PROJECT_SCAN] Loaded JSON schema for collection: {}",
                         collection.name
                     );
                     collection.json_schema = Some(json_schema);
@@ -244,7 +244,7 @@ pub async fn scan_project_with_content_dir(
             Ok(collections)
         }
         Err(err) => {
-            debug!("Astro Editor [PROJECT_SCAN] Astro config parsing failed: {err}, falling back to directory scan");
+            debug!("Nevertheless Editor [PROJECT_SCAN] Astro config parsing failed: {err}, falling back to directory scan");
             let mut collections =
                 scan_content_directories_with_override(path.as_path(), content_directory)?;
 
@@ -254,7 +254,7 @@ pub async fn scan_project_with_content_dir(
                     load_json_schema_for_collection(&project_path, &collection.name)
                 {
                     debug!(
-                        "Astro Editor [PROJECT_SCAN] Loaded JSON schema for collection: {}",
+                        "Nevertheless Editor [PROJECT_SCAN] Loaded JSON schema for collection: {}",
                         collection.name
                     );
                     collection.json_schema = Some(json_schema);
@@ -297,21 +297,21 @@ fn generate_complete_schema(collection: &mut Collection) {
         Ok(complete_schema) => match serde_json::to_string(&complete_schema) {
             Ok(serialized) => {
                 debug!(
-                    "Astro Editor [SCHEMA_MERGER] Generated complete schema for collection: {}",
+                    "Nevertheless Editor [SCHEMA_MERGER] Generated complete schema for collection: {}",
                     collection.name
                 );
                 collection.complete_schema = Some(serialized);
             }
             Err(e) => {
                 warn!(
-                    "Astro Editor [SCHEMA_MERGER] Failed to serialize complete schema for {}: {}",
+                    "Nevertheless Editor [SCHEMA_MERGER] Failed to serialize complete schema for {}: {}",
                     collection.name, e
                 );
             }
         },
         Err(e) => {
             warn!(
-                "Astro Editor [SCHEMA_MERGER] Failed to create complete schema for {}: {}",
+                "Nevertheless Editor [SCHEMA_MERGER] Failed to create complete schema for {}: {}",
                 collection.name, e
             );
         }
@@ -326,47 +326,49 @@ fn scan_content_directories_with_override(
 
     // Use override if provided, otherwise default to src/content
     let content_dir = if let Some(override_path) = &content_directory_override {
-        debug!("Astro Editor [PROJECT_SCAN] Using content directory override: {override_path}");
+        debug!(
+            "Nevertheless Editor [PROJECT_SCAN] Using content directory override: {override_path}"
+        );
         project_path.join(override_path)
     } else {
-        debug!("Astro Editor [PROJECT_SCAN] Using default content directory: src/content");
+        debug!("Nevertheless Editor [PROJECT_SCAN] Using default content directory: src/content");
         project_path.join("src").join("content")
     };
 
     if content_dir.exists() {
         info!(
-            "Astro Editor [PROJECT_SCAN] Content directory found: {}",
+            "Nevertheless Editor [PROJECT_SCAN] Content directory found: {}",
             content_dir.display()
         );
 
         // Look for common collection directories
         for entry in std::fs::read_dir(&content_dir).map_err(|e| {
             let err_msg = format!("Failed to read content directory: {e}");
-            error!("Astro Editor [PROJECT_SCAN] {err_msg}");
+            error!("Nevertheless Editor [PROJECT_SCAN] {err_msg}");
             err_msg
         })? {
             let entry = entry.map_err(|e| {
                 let err_msg = format!("Failed to read directory entry: {e}");
-                error!("Astro Editor [PROJECT_SCAN] {err_msg}");
+                error!("Nevertheless Editor [PROJECT_SCAN] {err_msg}");
                 err_msg
             })?;
             let path = entry.path();
 
             if path.is_dir() {
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    debug!("Astro Editor [PROJECT_SCAN] Found collection directory: {name}");
+                    debug!("Nevertheless Editor [PROJECT_SCAN] Found collection directory: {name}");
                     collections.push(Collection::new(name.to_string(), path));
                 }
             }
         }
 
         info!(
-            "Astro Editor [PROJECT_SCAN] Found {} collections via directory scan",
+            "Nevertheless Editor [PROJECT_SCAN] Found {} collections via directory scan",
             collections.len()
         );
     } else {
         error!(
-            "Astro Editor [PROJECT_SCAN] Content directory does not exist: {}",
+            "Nevertheless Editor [PROJECT_SCAN] Content directory does not exist: {}",
             content_dir.display()
         );
     }
@@ -432,7 +434,9 @@ pub async fn load_file_based_collection(
 ) -> Result<Vec<FileEntry>, String> {
     use regex::Regex;
 
-    debug!("Astro Editor [FILE_COLLECTION] Loading file-based collection: {collection_name}");
+    debug!(
+        "Nevertheless Editor [FILE_COLLECTION] Loading file-based collection: {collection_name}"
+    );
 
     // Read content.config.ts to find the file path
     let project = PathBuf::from(&project_path);
@@ -455,9 +459,9 @@ pub async fn load_file_based_collection(
                 r#"(?:(?:const|let|var)\s+)?{collection_name}\s*[=:]\s*defineCollection\s*\(\s*\{{\s*loader:\s*file\s*\(\s*['"]([^'"]+)['"]"#
             );
 
-            debug!("Astro Editor [FILE_COLLECTION] Regex pattern: {pattern}");
+            debug!("Nevertheless Editor [FILE_COLLECTION] Regex pattern: {pattern}");
             debug!(
-                "Astro Editor [FILE_COLLECTION] Config content (first 500 chars): {}",
+                "Nevertheless Editor [FILE_COLLECTION] Config content (first 500 chars): {}",
                 content.chars().take(500).collect::<String>()
             );
 
@@ -466,13 +470,15 @@ pub async fn load_file_based_collection(
                     let path_str = cap.get(1).unwrap().as_str();
                     let cleaned_path = path_str.trim_start_matches("./");
                     file_path = Some(project.join(cleaned_path));
-                    debug!("Astro Editor [FILE_COLLECTION] Matched! File path: {cleaned_path}");
+                    debug!(
+                        "Nevertheless Editor [FILE_COLLECTION] Matched! File path: {cleaned_path}"
+                    );
                     break;
                 } else {
-                    debug!("Astro Editor [FILE_COLLECTION] Regex did not match in content");
+                    debug!("Nevertheless Editor [FILE_COLLECTION] Regex did not match in content");
                 }
             } else {
-                debug!("Astro Editor [FILE_COLLECTION] Failed to compile regex pattern");
+                debug!("Nevertheless Editor [FILE_COLLECTION] Failed to compile regex pattern");
             }
         }
     }
@@ -482,7 +488,7 @@ pub async fn load_file_based_collection(
     })?;
 
     debug!(
-        "Astro Editor [FILE_COLLECTION] Found file path: {}",
+        "Nevertheless Editor [FILE_COLLECTION] Found file path: {}",
         file_path.display()
     );
 
@@ -533,7 +539,7 @@ pub async fn load_file_based_collection(
     }
 
     debug!(
-        "Astro Editor [FILE_COLLECTION] Loaded {} items from {}",
+        "Nevertheless Editor [FILE_COLLECTION] Loaded {} items from {}",
         files.len(),
         collection_name
     );
@@ -553,19 +559,19 @@ pub async fn read_json_schema(
         .join(format!("{collection_name}.schema.json"));
 
     debug!(
-        "Astro Editor [JSON_SCHEMA] Reading JSON schema at: {}",
+        "Nevertheless Editor [JSON_SCHEMA] Reading JSON schema at: {}",
         schema_path.display()
     );
 
     if !schema_path.exists() {
         let err_msg = format!("JSON schema file not found: {}", schema_path.display());
-        debug!("Astro Editor [JSON_SCHEMA] {err_msg}");
+        debug!("Nevertheless Editor [JSON_SCHEMA] {err_msg}");
         return Err(err_msg);
     }
 
     std::fs::read_to_string(&schema_path).map_err(|e| {
         let err_msg = format!("Failed to read JSON schema file: {e}");
-        error!("Astro Editor [JSON_SCHEMA] {err_msg}");
+        error!("Nevertheless Editor [JSON_SCHEMA] {err_msg}");
         err_msg
     })
 }

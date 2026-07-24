@@ -1,15 +1,15 @@
 {
   "name": "astro-editor",
   "private": true,
-  "version": "1.0.17",
+  "version": "1.0.18",
   "type": "module",
   "author": "Danny Smith",
-  "description": "Astro Editor is a native macOS application designed specifically for editing Astro content collections. It provides a distraction-free writing environment with seamless frontmatter editing capabilities. It also provides a component builder for MDX files, and a number of writing modes to help you write.",
-  "homepage": "https://github.com/dannysmith/astro-editor",
+  "description": "Nevertheless Editor is a native macOS application designed specifically for editing Astro content collections. It provides a distraction-free writing environment with seamless frontmatter editing capabilities. It also provides a component builder for MDX files, and a number of writing modes to help you write.",
+  "homepage": "https://github.com/emrickk/astro-editor",
   "copyright": "Copyright © 2025 Danny Smith. All rights reserved.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dannysmith/astro-editor.git"
+    "url": "https://github.com/emrickk/astro-editor.git"
   },
   "license": "AGPL-3.0-or-later",
   "scripts": {
