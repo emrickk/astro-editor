@@ -7,7 +7,10 @@ import { useCreateFile } from '../../../hooks/useCreateFile'
 import { useEditorActions } from '../../../hooks/editor/useEditorActions'
 import { getSiblingCandidatePaths } from '../../../lib/translations'
 import { usePublishStore } from '../../../store/publishStore'
-import { commandWantsFiles } from '../../../lib/publish'
+import {
+  commandWantsFiles,
+  validatePublishCommands,
+} from '../../../lib/publish'
 import { Button } from '../../ui/button'
 import {
   Save,
@@ -75,24 +78,28 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
   const startPublish = usePublishStore(state => state.startPublish)
 
   const handleSave = () => {
-    if (currentFile && isDirty) {
-      void saveFile()
+    if (currentFile && isDirty && !publishBusy) {
+      void Promise.resolve(saveFile()).catch(() => {})
     }
   }
 
   const canSwitchTranslation =
     !!currentFile && getSiblingCandidatePaths(currentFile.path).length > 0
 
-  const publishConfigured = Boolean(
-    currentProjectSettings?.publishPreflightCommand?.trim() &&
-      currentProjectSettings?.publishConfirmCommand?.trim()
+  const publishConfiguration = validatePublishCommands(
+    currentProjectSettings?.publishPreflightCommand,
+    currentProjectSettings?.publishConfirmCommand,
+    currentProjectSettings?.publishReviewCommand
   )
   const publishBusy = publishStage !== 'idle'
   // Per-post publish needs an open post to scope to
   const publishNeedsFile =
     commandWantsFiles(currentProjectSettings?.publishPreflightCommand) ||
     commandWantsFiles(currentProjectSettings?.publishConfirmCommand)
-  const publishDisabled = publishBusy || (publishNeedsFile && !currentFile)
+  const publishDisabled =
+    !publishConfiguration.valid ||
+    publishBusy ||
+    (publishNeedsFile && !currentFile)
 
   const bothPanelsHidden = !sidebarVisible && !frontmatterPanelVisible
 
@@ -155,7 +162,7 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
           </Button>
         )}
 
-        {projectPath && publishConfigured && (
+        {projectPath && (
           <Button
             onClick={() => void startPublish()}
             variant="ghost"
@@ -163,9 +170,11 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
             disabled={publishDisabled}
             className="size-7 p-0 [&_svg]:transform-gpu [&_svg]:scale-100 text-gray-700 dark:text-gray-300"
             title={
-              publishNeedsFile
-                ? 'Publish this post…'
-                : 'Publish…'
+              !publishConfiguration.valid
+                ? (publishConfiguration.error ?? 'Configure publishing')
+                : publishNeedsFile
+                  ? 'Publish this post…'
+                  : 'Publish…'
             }
             aria-label="Publish"
           >
@@ -182,6 +191,7 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
             onClick={() => void createNewFile()}
             variant="ghost"
             size="sm"
+            disabled={publishBusy}
             className="size-7 p-0 [&_svg]:transform-gpu [&_svg]:scale-100 text-gray-700 dark:text-gray-300"
             title={`New ${selectedCollection} file`}
           >
@@ -194,6 +204,7 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
             onClick={() => void switchTranslation()}
             variant="ghost"
             size="sm"
+            disabled={publishBusy}
             className="size-7 p-0 [&_svg]:transform-gpu [&_svg]:scale-100 text-gray-700 dark:text-gray-300"
             title="Switch Translation (⌘⇧L)"
             aria-label="Switch Translation"
@@ -248,7 +259,7 @@ export const TitleBarToolbar: React.FC<TitleBarToolbarProps> = ({
           onClick={handleSave}
           variant="ghost"
           size="sm"
-          disabled={!currentFile || !isDirty}
+          disabled={!currentFile || !isDirty || publishBusy}
           title={`Save${isDirty ? ' (unsaved changes)' : ''}`}
           className="size-7 p-0 [&_svg]:transform-gpu [&_svg]:scale-100 text-gray-700 dark:text-gray-300"
         >

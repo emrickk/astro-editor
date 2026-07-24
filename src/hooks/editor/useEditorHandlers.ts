@@ -25,17 +25,19 @@ export const useEditorHandlers = () => {
     window.dispatchEvent(new CustomEvent('editor-focus-changed'))
 
     // Manual save on blur for immediate feedback
-    const { currentFile, isDirty, saveFile } = useEditorStore.getState()
-    if (currentFile && isDirty) {
-      void saveFile()
+    const { currentFile, isDirty, isOperationLocked, saveFile } =
+      useEditorStore.getState()
+    if (currentFile && isDirty && !isOperationLocked) {
+      void Promise.resolve(saveFile()).catch(() => {})
     }
   }, [])
 
   // Handle manual save
   const handleSave = useCallback(() => {
-    const { currentFile, isDirty, saveFile } = useEditorStore.getState()
-    if (currentFile && isDirty) {
-      void saveFile()
+    const { currentFile, isDirty, isOperationLocked, saveFile } =
+      useEditorStore.getState()
+    if (currentFile && isDirty && !isOperationLocked) {
+      void Promise.resolve(saveFile()).catch(() => {})
     }
   }, [])
 

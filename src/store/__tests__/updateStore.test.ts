@@ -25,7 +25,7 @@ function resetStore() {
 
 describe('updateStore', () => {
   beforeEach(() => {
-    localStorage.clear()
+    window.localStorage.clear()
     resetStore()
   })
 
@@ -212,7 +212,7 @@ describe('updateStore', () => {
 
     it('persists to localStorage', () => {
       useUpdateStore.getState().skipVersion('1.0.9')
-      expect(localStorage.getItem(SKIPPED_VERSION_KEY)).toBe('1.0.9')
+      expect(window.localStorage.getItem(SKIPPED_VERSION_KEY)).toBe('1.0.9')
     })
 
     it('closes the dialog', () => {
@@ -225,13 +225,13 @@ describe('updateStore', () => {
       useUpdateStore.getState().skipVersion('1.0.9')
       useUpdateStore.getState().skipVersion('1.1.0')
       expect(useUpdateStore.getState().skippedVersion).toBe('1.1.0')
-      expect(localStorage.getItem(SKIPPED_VERSION_KEY)).toBe('1.1.0')
+      expect(window.localStorage.getItem(SKIPPED_VERSION_KEY)).toBe('1.1.0')
     })
   })
 
   describe('initialization', () => {
     it('reads skippedVersion from localStorage on create', async () => {
-      localStorage.setItem(SKIPPED_VERSION_KEY, '1.0.9')
+      window.localStorage.setItem(SKIPPED_VERSION_KEY, '1.0.9')
 
       // Re-import to get a fresh store that reads from localStorage
       // We need to reset the module cache

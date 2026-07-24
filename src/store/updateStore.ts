@@ -11,6 +11,15 @@ type DialogMode =
 
 const SKIPPED_VERSION_KEY = 'astro-editor-skipped-update-version'
 
+function getBrowserStorage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
 interface UpdateState {
   // Dialog state
   dialogOpen: boolean
@@ -71,7 +80,7 @@ export const useUpdateStore = create<UpdateState>(set => ({
   downloadProgress: 0,
   downloadTotal: null,
 
-  skippedVersion: localStorage.getItem(SKIPPED_VERSION_KEY),
+  skippedVersion: getBrowserStorage()?.getItem(SKIPPED_VERSION_KEY) ?? null,
 
   closeDialog: () =>
     set({
@@ -133,7 +142,7 @@ export const useUpdateStore = create<UpdateState>(set => ({
     set({ dialogOpen: true, dialogMode: 'error', errorMessage: message }),
 
   skipVersion: version => {
-    localStorage.setItem(SKIPPED_VERSION_KEY, version)
+    getBrowserStorage()?.setItem(SKIPPED_VERSION_KEY, version)
     set({ skippedVersion: version, dialogOpen: false })
   },
 }))

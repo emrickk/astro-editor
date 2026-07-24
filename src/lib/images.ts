@@ -11,6 +11,11 @@ export function isRenderableImageUrl(url: string): boolean {
   return /^https?:\/\//.test(url) || url.startsWith('data:image/')
 }
 
+/** True for image URLs supported by the project download command. */
+export function isDownloadableImageUrl(url: string): boolean {
+  return url.startsWith('https://')
+}
+
 /** Unique image URLs in source order from a markdown/HTML body. */
 export function extractImageUrls(body: string): string[] {
   const urls: string[] = []
@@ -56,6 +61,48 @@ export function coverDestinationFor(
   const yyyy = dated?.[1] ?? String(now.getFullYear())
   const mm = dated?.[2] ?? String(now.getMonth() + 1).padStart(2, '0')
   return `${coverDir.replace(/\/+$/, '')}/${yyyy}/${mm}/${safe}`
+}
+
+/** Adds a numeric suffix before the extension to avoid replacing a cover. */
+export function numberedCoverDestination(
+  destination: string,
+  index: number
+): string {
+  if (index < 2) return destination
+
+  const slash = destination.lastIndexOf('/')
+  const dot = destination.lastIndexOf('.')
+  const hasExtension = dot > slash
+  const stem = hasExtension ? destination.slice(0, dot) : destination
+  const extension = hasExtension ? destination.slice(dot) : ''
+  return `${stem}-${index}${extension}`
+}
+
+/** Finds a destination that does not already exist. */
+export async function findAvailableCoverDestination(
+  destination: string,
+  pathExists: (path: string) => Promise<boolean>
+): Promise<string> {
+  let index = 1
+  let candidate = destination
+  while (await pathExists(candidate)) {
+    index += 1
+    candidate = numberedCoverDestination(destination, index)
+  }
+  return candidate
+}
+
+/** File identity guard used after asynchronous image work. */
+export function isSameFileIdentity(
+  expected: { id: string; path: string } | null | undefined,
+  actual: { id: string; path: string } | null | undefined
+): boolean {
+  return Boolean(
+    expected &&
+    actual &&
+    expected.id === actual.id &&
+    expected.path === actual.path
+  )
 }
 
 /** Cover size spec: wide covers need 2400x1260, square ones 1600x1600. */

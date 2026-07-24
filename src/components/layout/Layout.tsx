@@ -14,6 +14,7 @@ import { ContentLinkerDialog } from '../content-linker'
 import { PublishDialog } from '../publish'
 import { Toaster } from '../ui/sonner'
 import { PreferencesDialog } from '../preferences'
+import type { PreferencePane } from '../preferences/PreferencesDialog'
 import { useProjectInitialization } from '../../hooks/useProjectInitialization'
 import { useRustToastBridge } from '../../hooks/useRustToastBridge'
 import { useEditorFocusTracking } from '../../hooks/useEditorFocusTracking'
@@ -27,6 +28,7 @@ import { useCreateFile } from '../../hooks/useCreateFile'
 import { useDeepLink } from '../../hooks/useDeepLink'
 import { useSquareCornersEffect } from '../../hooks/useSquareCornersEffect'
 import { useExternalLinkHandler } from '../../hooks/useExternalLinkHandler'
+import { usePullRecoveryNotice } from '../../hooks/usePullRecoveryNotice'
 import { useEditorStore } from '../../store/editorStore'
 import { focusEditor } from '../../lib/focus-utils'
 import { commands } from '../../lib/bindings'
@@ -58,6 +60,9 @@ export const Layout: React.FC = () => {
   )
 
   const [preferencesOpen, setPreferencesOpen] = useState(false)
+  const [requestedPreferencesPane, setRequestedPreferencesPane] = useState<
+    PreferencePane | undefined
+  >()
 
   // Panel refs for imperative collapse/expand control
   const leftPanelRef = useRef<PanelImperativeHandle>(null)
@@ -104,12 +109,18 @@ export const Layout: React.FC = () => {
   )
 
   const handleSetPreferencesOpen = useCallback((open: boolean) => {
+    setRequestedPreferencesPane(undefined)
     setPreferencesOpen(open)
     if (!open) {
       setTimeout(() => {
         focusEditor()
       }, 100)
     }
+  }, [])
+
+  const handleOpenRecoverySettings = useCallback(() => {
+    setRequestedPreferencesPane('project')
+    setPreferencesOpen(true)
   }, [])
 
   // Get editor actions (Hybrid Action Hooks pattern)
@@ -134,6 +145,7 @@ export const Layout: React.FC = () => {
   useDOMEventListeners(createNewFileWithQuery, handleSetPreferencesOpen)
   useDeepLink(openFileByPath)
   useExternalLinkHandler()
+  usePullRecoveryNotice(handleOpenRecoverySettings)
 
   // Enable query-based file loading
   useEditorFileContent()
@@ -277,6 +289,7 @@ export const Layout: React.FC = () => {
       <PreferencesDialog
         open={preferencesOpen}
         onOpenChange={handleSetPreferencesOpen}
+        requestedPane={requestedPreferencesPane}
       />
       <Toaster />
     </div>

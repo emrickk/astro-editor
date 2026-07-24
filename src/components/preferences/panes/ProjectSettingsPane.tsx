@@ -18,10 +18,16 @@ import { SettingsSection } from '../SettingsSection'
 import { PreferencesTextInput } from '../PreferencesTextInput'
 import { DocsLink } from '../DocsLink'
 import { DOCS_URLS } from '../../../lib/docs-urls'
+import { PullRecoveryHistory } from './PullRecoveryHistory'
 
 export const ProjectSettingsPane: React.FC = () => {
-  const { currentProjectSettings, updateProject, projectName, globalSettings } =
-    usePreferences()
+  const {
+    currentProjectSettings,
+    updateProject,
+    projectName,
+    projectPath,
+    globalSettings,
+  } = usePreferences()
 
   const handlePathOverrideChange = (
     key: 'contentDirectory' | 'assetsDirectory' | 'mdxComponentsDirectory',
@@ -92,6 +98,12 @@ export const ProjectSettingsPane: React.FC = () => {
           Collections tab.
         </p>
       </div>
+
+      {projectPath && (
+        <SettingsSection title="Pull Safety Copies">
+          <PullRecoveryHistory projectPath={projectPath} />
+        </SettingsSection>
+      )}
 
       <SettingsSection title="Path Overrides">
         <p className="text-sm text-muted-foreground -mt-3 mb-2">
@@ -189,10 +201,10 @@ export const ProjectSettingsPane: React.FC = () => {
             <FieldDescription>
               Optional shell command run for images dropped into the editor,
               instead of copying them into the assets directory. It runs from
-              the project root with the image path appended as one argument,
-              and whatever it prints to stdout is inserted at the cursor (for
-              example a markdown snippet pointing at a CDN URL). Leave empty
-              to keep the default copy-to-assets behaviour.
+              the project root with the image path appended as one argument, and
+              whatever it prints to stdout is inserted at the cursor (for
+              example a markdown snippet pointing at a CDN URL). Leave empty to
+              keep the default copy-to-assets behaviour.
             </FieldDescription>
           </FieldContent>
         </Field>
@@ -245,12 +257,12 @@ export const ProjectSettingsPane: React.FC = () => {
             />
             <FieldDescription>
               Computes the change set before publishing. Must print a
-              &quot;changeset digest: &lt;token&gt;&quot; line; a non-zero
-              exit aborts with its own explanation. Publishing is enabled
-              only when this and the confirm command are set. Include
-              {' {files}'} to scope the publish to the currently open post
-              and its translation siblings (repo-relative paths; a flag
-              directly before it is repeated per file).
+              &quot;changeset digest: &lt;token&gt;&quot; line; a non-zero exit
+              aborts with its own explanation. Publishing is enabled only when
+              this and the confirm command are set. Include
+              {' {files}'} to scope the publish to the currently open post and
+              its translation siblings (repo-relative paths; a flag directly
+              before it is repeated per file).
             </FieldDescription>
           </FieldContent>
         </Field>
@@ -278,10 +290,10 @@ export const ProjectSettingsPane: React.FC = () => {
             <div className="flex-1">
               <FieldLabel>One-Click Publish</FieldLabel>
               <FieldDescription>
-                Skip the confirmation dialog and review server: clicking
-                Publish runs the pipeline immediately after a successful
-                preflight, with progress shown in a toast. All automated
-                checks still run, and failures still open a dialog.
+                Skip the confirmation dialog and review server: clicking Publish
+                runs the pipeline immediately after a successful preflight, with
+                progress shown in a toast. All automated checks still run, and
+                failures still open a dialog.
               </FieldDescription>
             </div>
             <Switch
@@ -303,9 +315,9 @@ export const ProjectSettingsPane: React.FC = () => {
             />
             <FieldDescription>
               Runs after you approve; {'{digest}'} is replaced with the
-              preflight token so the pipeline can verify nothing changed
-              since the review, and {'{files}'} with the same scoped paths
-              as the preflight command.
+              preflight token so the pipeline can verify nothing changed since
+              the review, and {'{files}'} with the same scoped paths as the
+              preflight command.
             </FieldDescription>
           </FieldContent>
         </Field>

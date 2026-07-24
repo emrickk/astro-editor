@@ -3,7 +3,10 @@ import {
   parsePreflightOutput,
   expandPublishCommand,
   commandWantsFiles,
+  classifyPublishCompletion,
   extractFindings,
+  formatPullError,
+  validatePublishCommands,
 } from './publish'
 
 const SHIP_PREFLIGHT_OUTPUT = `post change(s) vs origin/main (2):
@@ -27,6 +30,26 @@ describe('parsePreflightOutput', () => {
     expect(result.empty).toBe(true)
     expect(result.digest).toBeNull()
     expect(result.files).toEqual([])
+  })
+
+  it('rejects arbitrary successful output instead of treating it as empty', () => {
+    expect(() => parsePreflightOutput('command completed somehow')).toThrow(
+      /unrecognized response/
+    )
+  })
+
+  it('rejects a digest without a file list', () => {
+    expect(() => parsePreflightOutput('changeset digest: abc123')).toThrow(
+      /without any changed files/
+    )
+  })
+
+  it('rejects a digest containing shell syntax', () => {
+    expect(() =>
+      parsePreflightOutput(`post change:
+  src/content/posts/a.md
+changeset digest: abc;touch-pwned`)
+    ).toThrow(/unsafe changeset digest/)
   })
 
   it('ignores lines after the digest line', () => {
@@ -106,10 +129,71 @@ changeset digest: abc123`
   })
 })
 
+describe('classifyPublishCompletion', () => {
+  it('only reports deployed when the command confirms deployment', () => {
+    expect(
+      classifyPublishCompletion(
+        'pushed abc1234 to origin/main\ndeploy complete:\n  https://example.com/post/'
+      )
+    ).toBe('deployed')
+  })
+
+  it('distinguishes a push from an unverified deployment', () => {
+    expect(
+      classifyPublishCompletion(
+        'pushed abc1234 to origin/main\ngh unavailable; watch the deploy'
+      )
+    ).toBe('pushed')
+  })
+
+  it('does not invent either guarantee for generic successful output', () => {
+    expect(classifyPublishCompletion('command finished')).toBe('completed')
+  })
+})
+
 describe('commandWantsFiles', () => {
   it('detects the files placeholder', () => {
     expect(commandWantsFiles('ship --only {files}')).toBe(true)
     expect(commandWantsFiles('ship --preflight')).toBe(false)
     expect(commandWantsFiles(undefined)).toBe(false)
+  })
+})
+
+describe('validatePublishCommands', () => {
+  it('requires a freshness digest in the confirm command', () => {
+    expect(validatePublishCommands('ship --preflight', 'ship --yes')).toEqual({
+      valid: false,
+      error: 'The publish confirm command must include {digest}.',
+    })
+  })
+
+  it('requires symmetric file scoping', () => {
+    expect(
+      validatePublishCommands(
+        'ship --preflight --only {files}',
+        'ship --yes --digest {digest}'
+      ).error
+    ).toMatch(/both include \{files\}/)
+  })
+
+  it('accepts a complete two-phase contract', () => {
+    expect(
+      validatePublishCommands(
+        'ship --preflight --only {files}',
+        'ship --yes --digest {digest} --only {files}'
+      )
+    ).toEqual({ valid: true, error: null })
+  })
+})
+
+describe('formatPullError', () => {
+  it('explains how to resolve a dirty-worktree refusal without stashing', () => {
+    const error =
+      new Error(`exit 1: Your local changes to the following files would be overwritten by merge:
+  src/content/posts/a.md
+    Please commit your changes or stash them before you merge. Aborting`)
+    expect(formatPullError(error)).toBe(
+      'Pull stopped to protect your local changes (src/content/posts/a.md). Reconcile those edits with GitHub (or commit them) before pulling again. The app did not stash or overwrite anything.'
+    )
   })
 })

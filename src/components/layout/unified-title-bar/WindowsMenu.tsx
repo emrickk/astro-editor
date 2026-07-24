@@ -87,10 +87,6 @@ export const WindowsMenu: React.FC = () => {
     void emit('menu-preferences')
   }
 
-  const handleCheckUpdates = () => {
-    void emit('menu-check-updates')
-  }
-
   const handleAbout = async () => {
     let version = 'Unknown'
     try {
@@ -164,9 +160,6 @@ export const WindowsMenu: React.FC = () => {
         <DropdownMenuItem onClick={handlePreferences}>
           Preferences...
           <DropdownMenuShortcut>Ctrl+,</DropdownMenuShortcut>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleCheckUpdates}>
-          Check for Updates...
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => void handleAbout()}>
           About Astro Editor

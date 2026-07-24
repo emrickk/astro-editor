@@ -62,9 +62,10 @@ export function useMenuEvents(
           void openProjectViaDialog()
         }),
         listen('menu-save', () => {
-          const { currentFile, isDirty, saveFile } = useEditorStore.getState()
-          if (currentFile && isDirty) {
-            void saveFile()
+          const { currentFile, isDirty, isOperationLocked, saveFile } =
+            useEditorStore.getState()
+          if (currentFile && isDirty && !isOperationLocked) {
+            void Promise.resolve(saveFile()).catch(() => {})
           }
         }),
         listen('menu-new-file', () => {

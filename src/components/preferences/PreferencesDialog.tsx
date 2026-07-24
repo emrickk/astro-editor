@@ -33,9 +33,10 @@ import { usePreferences } from '../../hooks/usePreferences'
 interface PreferencesDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  requestedPane?: PreferencePane
 }
 
-type PreferencePane = 'general' | 'project' | 'collections' | 'debug'
+export type PreferencePane = 'general' | 'project' | 'collections' | 'debug'
 
 const getNavigationItems = (hasProject: boolean) =>
   [
@@ -83,6 +84,7 @@ const getPaneTitle = (pane: PreferencePane): string => {
 export const PreferencesDialog: React.FC<PreferencesDialogProps> = ({
   open,
   onOpenChange,
+  requestedPane,
 }) => {
   const [activePane, setActivePane] = useState<PreferencePane>('general')
   const { hasProject } = usePreferences()
@@ -100,6 +102,17 @@ export const PreferencesDialog: React.FC<PreferencesDialogProps> = ({
       setActivePane('general')
     }
   }, [hasProject, activePane])
+
+  React.useEffect(() => {
+    if (!open || !requestedPane) return
+    const isAvailable = getNavigationItems(hasProject).some(
+      item => item.id === requestedPane
+    )
+    if (isAvailable) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActivePane(requestedPane)
+    }
+  }, [hasProject, open, requestedPane])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

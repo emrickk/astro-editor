@@ -83,6 +83,10 @@ export function PublishDialog() {
   const shipPhase = usePublishStore(state => state.shipPhase)
   const log = usePublishStore(state => state.log)
   const error = usePublishStore(state => state.error)
+  const errorOperation = usePublishStore(state => state.errorOperation)
+  const completionLabel = usePublishStore(state => state.completionLabel)
+  const completionSummary = usePublishStore(state => state.completionSummary)
+  const reloadWarning = usePublishStore(state => state.reloadWarning)
   const approveAndShip = usePublishStore(state => state.approveAndShip)
   const cancelReview = usePublishStore(state => state.cancelReview)
   const dismissError = usePublishStore(state => state.dismissError)
@@ -91,15 +95,17 @@ export function PublishDialog() {
   // only failures surface here.
   const open =
     stage === 'review' ||
+    stage === 'cancelling' ||
     stage === 'error' ||
+    stage === 'reload-warning' ||
     (stage === 'shipping' && !autoMode)
   if (!open) return null
 
   const handleOpenChange = (next: boolean) => {
     if (next) return
     if (stage === 'review') void cancelReview()
-    if (stage === 'error') dismissError()
-    // 'shipping' ignores dismissal: the pipeline is already running
+    if (stage === 'error' || stage === 'reload-warning') dismissError()
+    // Shipping and cancellation ignore dismissal while work is still running.
   }
 
   return (
@@ -107,22 +113,36 @@ export function PublishDialog() {
       <DialogContent
         className="sm:max-w-lg"
         onInteractOutside={event => {
-          if (stage === 'shipping') event.preventDefault()
+          if (stage === 'shipping' || stage === 'cancelling')
+            event.preventDefault()
         }}
       >
         <DialogHeader>
           <DialogTitle>
             {stage === 'review' && `Publish ${files.length} file(s)?`}
+            {stage === 'cancelling' &&
+              (error ? 'Review is still running' : 'Stopping review…')}
             {stage === 'shipping' && 'Publishing…'}
-            {stage === 'error' && 'Publish stopped'}
+            {stage === 'error' &&
+              (errorOperation === 'pull' ? 'Pull failed' : 'Publish stopped')}
+            {stage === 'reload-warning' &&
+              (completionLabel ?? 'Git operation complete')}
           </DialogTitle>
           <DialogDescription>
             {stage === 'review' &&
               'Look over the production preview in your browser, then approve.'}
             {stage === 'shipping' &&
               'Running the publish pipeline. This can take a few minutes.'}
+            {stage === 'cancelling' &&
+              (error
+                ? 'The app is keeping this project locked until the review process is confirmed stopped.'
+                : 'Waiting for the review process to stop safely.')}
             {stage === 'error' &&
-              'The pipeline explained why below. Nothing was pushed unless the log says otherwise.'}
+              (errorOperation === 'pull'
+                ? 'Pull stopped with an error. Review the details and recovery guidance below before trying again.'
+                : 'The pipeline explained why below. Nothing was pushed unless the log says otherwise.')}
+            {stage === 'reload-warning' &&
+              'The Git operation succeeded, but the editor could not safely reload the open file.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -155,6 +175,20 @@ export function PublishDialog() {
               <Badge variant="secondary" title="Changeset digest">
                 {digest}
               </Badge>
+            )}
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+        )}
+
+        {stage === 'cancelling' && (
+          <div className="space-y-3 text-sm">
+            {error ? (
+              <p className="text-destructive">{error}</p>
+            ) : (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                <span>Confirming the review process has exited…</span>
+              </div>
             )}
           </div>
         )}
@@ -189,8 +223,19 @@ export function PublishDialog() {
           </div>
         )}
 
-        {stage === 'error' && (
-          <ErrorBody error={error} log={log} />
+        {stage === 'error' && <ErrorBody error={error} log={log} />}
+
+        {stage === 'reload-warning' && (
+          <div className="space-y-2 text-sm">
+            {completionSummary && (
+              <p className="font-mono text-xs bg-muted rounded p-2 whitespace-pre-wrap">
+                {completionSummary}
+              </p>
+            )}
+            {reloadWarning && (
+              <p className="text-destructive">{reloadWarning}</p>
+            )}
+          </div>
         )}
 
         <DialogFooter>
@@ -199,9 +244,12 @@ export function PublishDialog() {
               <Button variant="outline" onClick={() => void cancelReview()}>
                 Cancel
               </Button>
-              <Button onClick={() => void approveAndShip()}>
+              <Button
+                disabled={!reviewReady}
+                onClick={() => void approveAndShip()}
+              >
                 <Rocket className="size-4 mr-1" />
-                Approve & Ship
+                {reviewReady ? 'Approve & Ship' : 'Waiting for preview…'}
               </Button>
             </>
           )}
@@ -211,7 +259,21 @@ export function PublishDialog() {
               Publishing…
             </Button>
           )}
+          {stage === 'cancelling' &&
+            (error ? (
+              <Button onClick={() => void cancelReview()}>Retry stop</Button>
+            ) : (
+              <Button disabled variant="outline">
+                <Loader2 className="size-4 mr-1 animate-spin" />
+                Stopping…
+              </Button>
+            ))}
           {stage === 'error' && (
+            <Button variant="outline" onClick={dismissError}>
+              Close
+            </Button>
+          )}
+          {stage === 'reload-warning' && (
             <Button variant="outline" onClick={dismissError}>
               Close
             </Button>

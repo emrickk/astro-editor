@@ -1,9 +1,53 @@
 import { EditorView } from '@codemirror/view'
 import { useEditorStore } from '../../../store/editorStore'
 import { useProjectStore } from '../../../store/projectStore'
+import {
+  tryAcquireProjectOperation,
+  type ProjectOperationLease,
+} from '../../../store/projectOperationLease'
+import { isSameFileIdentity } from '../../images'
 import { processDroppedFiles } from './fileProcessing'
 import { validateDropContext, buildFallbackMarkdownForPaths } from './edgeCases'
 import { FileDropPayload, DropResult } from './types'
+import type { FileEntry } from '@/types'
+
+function dropTargetIsCurrent(
+  projectPath: string,
+  currentFile: FileEntry,
+  lease: ProjectOperationLease
+): boolean {
+  const project = useProjectStore.getState()
+  const editor = useEditorStore.getState()
+  return (
+    lease.isCurrent() &&
+    !project.isOperationLocked &&
+    !editor.isOperationLocked &&
+    project.projectPath === projectPath &&
+    isSameFileIdentity(currentFile, editor.currentFile)
+  )
+}
+
+/**
+ * Hands the workflow mutex directly to one final synchronous editor mutation.
+ * JavaScript cannot run another event handler between release and dispatch.
+ */
+function releaseForDropMutation(
+  projectPath: string,
+  currentFile: FileEntry,
+  lease: ProjectOperationLease
+): boolean {
+  if (!dropTargetIsCurrent(projectPath, currentFile, lease)) return false
+  lease.release()
+
+  const project = useProjectStore.getState()
+  const editor = useEditorStore.getState()
+  return (
+    !project.isOperationLocked &&
+    !editor.isOperationLocked &&
+    project.projectPath === projectPath &&
+    isSameFileIdentity(currentFile, editor.currentFile)
+  )
+}
 
 /**
  * Parse file drop payload from Tauri event
@@ -100,6 +144,16 @@ export const handleTauriFileDrop = async (
   const validation = validateDropContext(projectPath, currentFile)
 
   if (!validation.canProceed) {
+    const projectLocked = useProjectStore.getState().isOperationLocked
+    const editorLocked = useEditorStore.getState().isOperationLocked
+    if (projectLocked || editorLocked) {
+      return {
+        success: false,
+        insertText: '',
+        error: 'Finish the current pull or publish before dropping files',
+      }
+    }
+
     const fallbackText = buildFallbackMarkdownForPaths(filePaths)
 
     // Insert fallback text
@@ -121,18 +175,37 @@ export const handleTauriFileDrop = async (
     }
   }
 
+  const targetFile = currentFile!
+  const lease = tryAcquireProjectOperation('image', projectPath!)
+  if (!lease) {
+    return {
+      success: false,
+      insertText: '',
+      error: 'Finish the current project operation before dropping files',
+    }
+  }
+
   // Process files normally
   try {
     const processedFiles = await processDroppedFiles(
       filePaths,
       projectPath!,
-      currentFile!.collection
+      targetFile.collection
     )
 
     const insertText = processedFiles
       .map(file => file.markdownText)
       .filter(text => text.length > 0)
       .join('\n')
+
+    if (!releaseForDropMutation(projectPath!, targetFile, lease)) {
+      return {
+        success: false,
+        insertText: '',
+        error:
+          'The project or open file changed while the dropped files were being processed',
+      }
+    }
 
     // Insert processed text at cursor position
     const { state } = editorView
@@ -147,6 +220,15 @@ export const handleTauriFileDrop = async (
   } catch {
     // Handle processing errors
     const fallbackText = buildFallbackMarkdownForPaths(filePaths)
+
+    if (!releaseForDropMutation(projectPath!, targetFile, lease)) {
+      return {
+        success: false,
+        insertText: '',
+        error:
+          'The project or open file changed while the dropped files were being processed',
+      }
+    }
 
     const { state } = editorView
     const { from } = state.selection.main
@@ -164,5 +246,7 @@ export const handleTauriFileDrop = async (
       insertText: fallbackText,
       error: 'Processing failed',
     }
+  } finally {
+    lease.release()
   }
 }

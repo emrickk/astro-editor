@@ -94,6 +94,8 @@ pub async fn write_file(
     content: String,
     project_root: String,
 ) -> Result<(), String> {
+    let _mutation_guard =
+        super::project_mutation::try_lock_for_write(Path::new(&project_root), "save the file")?;
     let validated_path = validate_project_path(&file_path, &project_root)?;
     std::fs::write(&validated_path, content).map_err(|e| format!("Failed to write file: {e}"))
 }
@@ -106,6 +108,8 @@ pub async fn create_file(
     content: String,
     project_root: String,
 ) -> Result<String, String> {
+    let _mutation_guard =
+        super::project_mutation::try_lock_for_write(Path::new(&project_root), "create the file")?;
     // Validate directory is within project
     let validated_dir = validate_project_path(&directory, &project_root)?;
     let path = validated_dir.join(&filename);
@@ -127,8 +131,444 @@ pub async fn create_file(
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_file(file_path: String, project_root: String) -> Result<(), String> {
+    let _mutation_guard =
+        super::project_mutation::try_lock_for_write(Path::new(&project_root), "delete the file")?;
     let validated_path = validate_project_path(&file_path, &project_root)?;
     std::fs::remove_file(&validated_path).map_err(|e| format!("Failed to delete file: {e}"))
+}
+
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteFileTarget {
+    pub file_path: String,
+    pub expected_content: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletedFileRecovery {
+    pub original_path: String,
+    pub recovery_path: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteFilesResult {
+    pub recovery_directory: String,
+    pub files: Vec<DeletedFileRecovery>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreFileTarget {
+    pub original_path: String,
+    pub recovery_path: String,
+}
+
+#[derive(Debug)]
+struct ValidatedDeleteFileTarget {
+    path: PathBuf,
+    expected_content: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct ValidatedRestoreFileTarget {
+    original_path: PathBuf,
+    recovery_path: PathBuf,
+}
+
+#[derive(Debug)]
+struct QuarantinedDeleteTarget<'a> {
+    target: &'a ValidatedDeleteFileTarget,
+    quarantine_path: PathBuf,
+}
+
+fn validate_delete_file_targets(
+    targets: Vec<DeleteFileTarget>,
+    project_root: &str,
+) -> Result<Vec<ValidatedDeleteFileTarget>, String> {
+    if targets.is_empty() || targets.len() > 2 {
+        return Err("Delete transaction requires one post or one translation pair".to_string());
+    }
+
+    let mut unique_paths = std::collections::HashSet::new();
+    let mut validated = Vec::with_capacity(targets.len());
+    for target in targets {
+        let path = validate_project_path(&target.file_path, project_root)?;
+        if !path.is_file() {
+            return Err(format!("Post file not found: {}", path.display()));
+        }
+        if !unique_paths.insert(path.clone()) {
+            return Err("Delete transaction contains the same post more than once".to_string());
+        }
+        validated.push(ValidatedDeleteFileTarget {
+            path,
+            expected_content: target.expected_content.into_bytes(),
+        });
+    }
+    Ok(validated)
+}
+
+fn write_atomic_no_clobber(path: &Path, content: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Invalid destination path: {}", path.display()))?;
+    let filename = path
+        .file_name()
+        .ok_or_else(|| format!("Invalid destination path: {}", path.display()))?
+        .to_string_lossy();
+    let temp_path = parent.join(format!(
+        ".{filename}.astro-editor-restore-{}",
+        uuid::Uuid::new_v4()
+    ));
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp_path)
+        .map_err(|e| format!("Could not create temporary recovery file: {e}"))?;
+    if let Err(error) = file.write_all(content).and_then(|_| file.sync_all()) {
+        drop(file);
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(format!(
+            "Could not finish recovery file {}: {error}",
+            path.display()
+        ));
+    }
+    drop(file);
+
+    if let Err(error) = std::fs::hard_link(&temp_path, path) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(if error.kind() == std::io::ErrorKind::AlreadyExists {
+            format!(
+                "A different file now exists at {}. It was not overwritten.",
+                path.display()
+            )
+        } else {
+            format!(
+                "Could not atomically restore {} without overwriting it: {error}",
+                path.display()
+            )
+        });
+    }
+    std::fs::remove_file(&temp_path).map_err(|error| {
+        format!(
+            "Restored {}, but could not remove its temporary recovery link: {error}",
+            path.display()
+        )
+    })
+}
+
+fn restore_quarantined_no_clobber(target: &QuarantinedDeleteTarget<'_>) -> Result<(), String> {
+    if let Err(error) = std::fs::hard_link(&target.quarantine_path, &target.target.path) {
+        return Err(if error.kind() == std::io::ErrorKind::AlreadyExists {
+            format!(
+                "a newer file exists at {}; quarantined data remains at {}",
+                target.target.path.display(),
+                target.quarantine_path.display()
+            )
+        } else {
+            format!(
+                "could not restore {} from quarantine {}: {error}",
+                target.target.path.display(),
+                target.quarantine_path.display()
+            )
+        });
+    }
+    std::fs::remove_file(&target.quarantine_path).map_err(|error| {
+        format!(
+            "restored {}, but could not remove quarantine {}: {error}",
+            target.target.path.display(),
+            target.quarantine_path.display()
+        )
+    })
+}
+
+fn rollback_quarantined(quarantined: &[QuarantinedDeleteTarget<'_>]) -> Vec<String> {
+    quarantined
+        .iter()
+        .rev()
+        .filter_map(|target| restore_quarantined_no_clobber(target).err())
+        .collect()
+}
+
+fn delete_transaction_error(
+    message: String,
+    quarantined: &[QuarantinedDeleteTarget<'_>],
+) -> String {
+    let rollback_errors = rollback_quarantined(quarantined);
+    if rollback_errors.is_empty() {
+        format!("{message}. Quarantined files were restored without overwriting newer files.")
+    } else {
+        format!(
+            "{message}. Some quarantined files could not be restored automatically: {}",
+            rollback_errors.join("; ")
+        )
+    }
+}
+
+fn delete_files_transaction_with<R, H>(
+    targets: &[ValidatedDeleteFileTarget],
+    recovery_directory: &Path,
+    mut rename_to_quarantine: R,
+    mut after_quarantine: H,
+) -> Result<DeleteFilesResult, String>
+where
+    R: FnMut(&Path, &Path) -> std::io::Result<()>,
+    H: FnMut(usize, &ValidatedDeleteFileTarget, &Path) -> Result<(), String>,
+{
+    std::fs::create_dir_all(recovery_directory)
+        .map_err(|error| format!("Could not create the deletion recovery folder: {error}"))?;
+
+    let mut quarantined = Vec::with_capacity(targets.len());
+    for (index, target) in targets.iter().enumerate() {
+        let filename = target
+            .path
+            .file_name()
+            .ok_or_else(|| format!("Invalid post path: {}", target.path.display()))?
+            .to_string_lossy();
+        let quarantine_path = target.path.with_file_name(format!(
+            ".{filename}.astro-editor-quarantine-{}",
+            uuid::Uuid::new_v4()
+        ));
+
+        if let Err(error) = rename_to_quarantine(&target.path, &quarantine_path) {
+            return Err(delete_transaction_error(
+                format!(
+                    "Could not atomically quarantine {}: {error}",
+                    target.path.display()
+                ),
+                &quarantined,
+            ));
+        }
+        quarantined.push(QuarantinedDeleteTarget {
+            target,
+            quarantine_path,
+        });
+        let current_quarantine = quarantined.last().expect("just pushed");
+
+        if let Err(error) =
+            after_quarantine(index, target, current_quarantine.quarantine_path.as_path())
+        {
+            return Err(delete_transaction_error(error, &quarantined));
+        }
+
+        let current = match std::fs::read(&current_quarantine.quarantine_path) {
+            Ok(content) => content,
+            Err(error) => {
+                return Err(delete_transaction_error(
+                    format!(
+                        "Could not verify quarantined post {}: {error}",
+                        current_quarantine.quarantine_path.display()
+                    ),
+                    &quarantined,
+                ));
+            }
+        };
+        if current != target.expected_content {
+            return Err(delete_transaction_error(
+                format!(
+                    "{} changed after the deletion recovery snapshot was created",
+                    target.path.display()
+                ),
+                &quarantined,
+            ));
+        }
+    }
+
+    let mut files = Vec::with_capacity(quarantined.len());
+    for (index, quarantined_target) in quarantined.iter().enumerate() {
+        let filename = quarantined_target
+            .target
+            .path
+            .file_name()
+            .expect("validated file has a name")
+            .to_string_lossy();
+        let recovery_path = recovery_directory.join(format!("{}-{filename}", index + 1));
+        if let Err(error) =
+            write_atomic_no_clobber(&recovery_path, &quarantined_target.target.expected_content)
+        {
+            return Err(delete_transaction_error(
+                format!(
+                    "Could not persist a recovery copy for {}: {error}",
+                    quarantined_target.target.path.display()
+                ),
+                &quarantined,
+            ));
+        }
+        files.push(DeletedFileRecovery {
+            original_path: quarantined_target.target.path.to_string_lossy().to_string(),
+            recovery_path: recovery_path.to_string_lossy().to_string(),
+        });
+    }
+
+    let manifest = serde_json::json!({
+        "deletedAt": Local::now().to_rfc3339(),
+        "files": &files,
+    });
+    let manifest_content = serde_json::to_vec_pretty(&manifest)
+        .map_err(|error| format!("Could not serialize deletion recovery manifest: {error}"))?;
+    if let Err(error) =
+        write_atomic_no_clobber(&recovery_directory.join("manifest.json"), &manifest_content)
+    {
+        return Err(delete_transaction_error(
+            format!("Could not persist the deletion recovery manifest: {error}"),
+            &quarantined,
+        ));
+    }
+
+    for quarantined_target in &quarantined {
+        std::fs::remove_file(&quarantined_target.quarantine_path).map_err(|error| {
+            format!(
+                "The post was safely copied to recovery, but quarantine cleanup failed at {}: {error}",
+                quarantined_target.quarantine_path.display()
+            )
+        })?;
+    }
+
+    let replacements = targets
+        .iter()
+        .filter(|target| target.path.exists())
+        .map(|target| target.path.display().to_string())
+        .collect::<Vec<_>>();
+    if !replacements.is_empty() {
+        return Err(format!(
+            "Newer file content appeared during deletion and was preserved at: {}. Recovery copies are in {}.",
+            replacements.join(", "),
+            recovery_directory.display()
+        ));
+    }
+
+    Ok(DeleteFilesResult {
+        recovery_directory: recovery_directory.to_string_lossy().to_string(),
+        files,
+    })
+}
+
+/// Atomically quarantines a post or verified translation pair before checking
+/// its bytes. A concurrent atomic save can therefore be preserved or rejected,
+/// but can never be unlinked by this deletion transaction.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_files_transaction(
+    app: tauri::AppHandle,
+    targets: Vec<DeleteFileTarget>,
+    project_root: String,
+) -> Result<DeleteFilesResult, String> {
+    let _mutation_guard =
+        super::project_mutation::try_lock_for_write(Path::new(&project_root), "delete the post")?;
+    let validated = validate_delete_file_targets(targets, &project_root)?;
+    let recovery_root = app
+        .path()
+        .resolve("deleted-posts", BaseDirectory::AppLocalData)
+        .map_err(|error| format!("Could not resolve the deletion recovery folder: {error}"))?;
+    std::fs::create_dir_all(&recovery_root)
+        .map_err(|error| format!("Could not create the deletion recovery folder: {error}"))?;
+    let recovery_directory = recovery_root.join(format!(
+        "{}-{}",
+        Local::now().format("%Y%m%d-%H%M%S"),
+        uuid::Uuid::new_v4()
+    ));
+
+    delete_files_transaction_with(
+        &validated,
+        &recovery_directory,
+        |source, quarantine| std::fs::rename(source, quarantine),
+        |_, _, _| Ok(()),
+    )
+}
+
+fn validate_restore_file_targets(
+    targets: Vec<RestoreFileTarget>,
+    project_root: &str,
+    app_data_dir: &str,
+) -> Result<Vec<ValidatedRestoreFileTarget>, String> {
+    if targets.is_empty() || targets.len() > 2 {
+        return Err("Restore transaction requires one post or one translation pair".to_string());
+    }
+
+    let mut originals = std::collections::HashSet::new();
+    let mut recoveries = std::collections::HashSet::new();
+    targets
+        .into_iter()
+        .map(|target| {
+            let original_path = validate_project_path(&target.original_path, project_root)?;
+            let recovery_path = validate_app_data_path(&target.recovery_path, app_data_dir)?;
+            if !recovery_path.is_file() {
+                return Err(format!(
+                    "Recovery copy not found: {}",
+                    recovery_path.display()
+                ));
+            }
+            if !originals.insert(original_path.clone()) || !recoveries.insert(recovery_path.clone())
+            {
+                return Err("Restore transaction contains duplicate files".to_string());
+            }
+            Ok(ValidatedRestoreFileTarget {
+                original_path,
+                recovery_path,
+            })
+        })
+        .collect()
+}
+
+fn restore_files_transaction_inner(targets: &[ValidatedRestoreFileTarget]) -> Result<(), String> {
+    for target in targets {
+        let content = std::fs::read(&target.recovery_path).map_err(|error| {
+            format!(
+                "Could not read recovery copy {}: {error}",
+                target.recovery_path.display()
+            )
+        })?;
+
+        match std::fs::read(&target.original_path) {
+            Ok(existing) if existing == content => continue,
+            Ok(_) => {
+                return Err(format!(
+                    "A different file now exists at {}. It was not overwritten. Recovery copies remain available.",
+                    target.original_path.display()
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(format!(
+                    "Could not inspect restore destination {}: {error}",
+                    target.original_path.display()
+                ));
+            }
+        }
+
+        write_atomic_no_clobber(&target.original_path, &content).map_err(|error| {
+            format!(
+                "Could not restore {}: {error}. Recovery copies remain available.",
+                target.original_path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Restores recovery files through atomic no-clobber links. Existing files are
+/// never truncated or replaced, even if another application saves concurrently.
+#[tauri::command]
+#[specta::specta]
+pub async fn restore_files_transaction(
+    app: tauri::AppHandle,
+    targets: Vec<RestoreFileTarget>,
+    project_root: String,
+) -> Result<(), String> {
+    let _mutation_guard =
+        super::project_mutation::try_lock_for_write(Path::new(&project_root), "restore the post")?;
+    let app_data_dir = app
+        .path()
+        .resolve("", BaseDirectory::AppLocalData)
+        .map_err(|error| format!("Could not resolve app data directory: {error}"))?
+        .to_string_lossy()
+        .to_string();
+    let validated = validate_restore_file_targets(targets, &project_root, &app_data_dir)?;
+    restore_files_transaction_inner(&validated)
 }
 
 #[tauri::command]
@@ -138,6 +578,8 @@ pub async fn rename_file(
     new_path: String,
     project_root: String,
 ) -> Result<(), String> {
+    let _mutation_guard =
+        super::project_mutation::try_lock_for_write(Path::new(&project_root), "rename the file")?;
     let validated_old_path = validate_project_path(&old_path, &project_root)?;
     let validated_new_path = validate_project_path(&new_path, &project_root)?;
     std::fs::rename(&validated_old_path, &validated_new_path)
@@ -206,6 +648,9 @@ pub async fn copy_file_to_assets_with_override(
     use_relative_paths: bool,
 ) -> Result<String, String> {
     use std::fs;
+
+    let _mutation_guard =
+        super::project_mutation::try_lock_for_write(Path::new(&project_path), "copy the asset")?;
 
     // Validate project path
     let validated_project_root = Path::new(&project_path)
@@ -344,6 +789,10 @@ pub async fn update_frontmatter(
     frontmatter: IndexMap<String, Value>,
     project_root: String,
 ) -> Result<(), String> {
+    let _mutation_guard = super::project_mutation::try_lock_for_write(
+        Path::new(&project_root),
+        "update frontmatter",
+    )?;
     let validated_path = validate_project_path(&file_path, &project_root)?;
     let content = std::fs::read_to_string(&validated_path)
         .map_err(|e| format!("Failed to read file: {e}"))?;
@@ -369,6 +818,8 @@ pub async fn save_markdown_content(
     schema_field_order: Option<Vec<String>>,
     project_root: String,
 ) -> Result<(), String> {
+    let _mutation_guard =
+        super::project_mutation::try_lock_for_write(Path::new(&project_root), "save the post")?;
     let validated_path = validate_project_path(&file_path, &project_root)?;
 
     let new_content = match (frontmatter, raw_frontmatter) {
@@ -850,9 +1301,12 @@ fn merge_frontmatter_preserving_format(
         if original.get(&segment.key) == Some(new_value) {
             out.extend(segment.lines.iter().cloned());
         } else {
-            let entry =
-                serialize_yaml_entry(&segment.key, new_value, segment.lines.first().map(|s| s.as_str()))
-                    .ok()?;
+            let entry = serialize_yaml_entry(
+                &segment.key,
+                new_value,
+                segment.lines.first().map(|s| s.as_str()),
+            )
+            .ok()?;
             out.extend(entry.lines().map(String::from));
         }
     }
@@ -1144,6 +1598,8 @@ pub async fn write_file_content(
     content: String,
     project_root: String,
 ) -> Result<(), String> {
+    let _mutation_guard =
+        super::project_mutation::try_lock_for_write(Path::new(&project_root), "write the file")?;
     let validated_path = validate_project_path(&file_path, &project_root)?;
 
     // Create parent directories if they don't exist
@@ -1158,6 +1614,10 @@ pub async fn write_file_content(
 #[tauri::command]
 #[specta::specta]
 pub async fn create_directory(path: String, project_root: String) -> Result<(), String> {
+    let _mutation_guard = super::project_mutation::try_lock_for_write(
+        Path::new(&project_root),
+        "create the directory",
+    )?;
     let validated_path = validate_project_path(&path, &project_root)?;
     std::fs::create_dir_all(&validated_path).map_err(|e| format!("Failed to create directory: {e}"))
 }
@@ -1594,6 +2054,196 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_dir_all(&project_root);
+    }
+
+    fn deletion_target(path: &Path, expected_content: &str) -> DeleteFileTarget {
+        DeleteFileTarget {
+            file_path: path.to_string_lossy().to_string(),
+            expected_content: expected_content.to_string(),
+        }
+    }
+
+    #[test]
+    fn delete_files_transaction_quarantines_and_recovers_a_verified_pair() {
+        let project = tempfile::tempdir().unwrap();
+        let recovery = tempfile::tempdir().unwrap();
+        let primary = project.path().join("post.md");
+        let sibling = project.path().join("post.zh.md");
+        fs::write(&primary, "primary").unwrap();
+        fs::write(&sibling, "translation").unwrap();
+
+        let validated = validate_delete_file_targets(
+            vec![
+                deletion_target(&primary, "primary"),
+                deletion_target(&sibling, "translation"),
+            ],
+            project.path().to_str().unwrap(),
+        )
+        .unwrap();
+        let result = delete_files_transaction_with(
+            &validated,
+            recovery.path(),
+            |source, quarantine| fs::rename(source, quarantine),
+            |_, _, _| Ok(()),
+        )
+        .unwrap();
+
+        assert!(!primary.exists());
+        assert!(!sibling.exists());
+        assert_eq!(
+            fs::read_to_string(&result.files[0].recovery_path).unwrap(),
+            "primary"
+        );
+        assert_eq!(
+            fs::read_to_string(&result.files[1].recovery_path).unwrap(),
+            "translation"
+        );
+        assert!(recovery.path().join("manifest.json").is_file());
+    }
+
+    #[test]
+    fn delete_files_transaction_restores_the_first_file_on_partial_failure() {
+        let project = tempfile::tempdir().unwrap();
+        let recovery = tempfile::tempdir().unwrap();
+        let primary = project.path().join("post.md");
+        let sibling = project.path().join("post.zh.md");
+        fs::write(&primary, "primary").unwrap();
+        fs::write(&sibling, "translation").unwrap();
+        let validated = validate_delete_file_targets(
+            vec![
+                deletion_target(&primary, "primary"),
+                deletion_target(&sibling, "translation"),
+            ],
+            project.path().to_str().unwrap(),
+        )
+        .unwrap();
+        let mut moves = 0;
+
+        let error = delete_files_transaction_with(
+            &validated,
+            recovery.path(),
+            |source, quarantine| {
+                moves += 1;
+                if moves == 2 {
+                    return Err(std::io::Error::other("injected failure"));
+                }
+                fs::rename(source, quarantine)
+            },
+            |_, _, _| Ok(()),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("Quarantined files were restored"), "{error}");
+        assert_eq!(fs::read_to_string(primary).unwrap(), "primary");
+        assert_eq!(fs::read_to_string(sibling).unwrap(), "translation");
+    }
+
+    #[test]
+    fn delete_files_transaction_refuses_stale_recovery_bytes_and_rolls_back() {
+        let project = tempfile::tempdir().unwrap();
+        let recovery = tempfile::tempdir().unwrap();
+        let primary = project.path().join("post.md");
+        let sibling = project.path().join("post.zh.md");
+        fs::write(&primary, "primary").unwrap();
+        fs::write(&sibling, "translation changed after backup").unwrap();
+        let validated = validate_delete_file_targets(
+            vec![
+                deletion_target(&primary, "primary"),
+                deletion_target(&sibling, "stale translation"),
+            ],
+            project.path().to_str().unwrap(),
+        )
+        .unwrap();
+
+        let error = delete_files_transaction_with(
+            &validated,
+            recovery.path(),
+            |source, quarantine| fs::rename(source, quarantine),
+            |_, _, _| Ok(()),
+        )
+        .unwrap_err();
+
+        assert!(
+            error.contains("changed after the deletion recovery snapshot"),
+            "{error}"
+        );
+        assert!(error.contains("Quarantined files were restored"), "{error}");
+        assert_eq!(fs::read_to_string(primary).unwrap(), "primary");
+        assert_eq!(
+            fs::read_to_string(sibling).unwrap(),
+            "translation changed after backup"
+        );
+    }
+
+    #[test]
+    fn delete_files_transaction_preserves_an_atomic_save_after_quarantine() {
+        let project = tempfile::tempdir().unwrap();
+        let recovery = tempfile::tempdir().unwrap();
+        let primary = project.path().join("post.md");
+        let replacement = project.path().join("replacement.tmp");
+        fs::write(&primary, "approved bytes").unwrap();
+        fs::write(&replacement, "new external save").unwrap();
+        let validated = validate_delete_file_targets(
+            vec![deletion_target(&primary, "approved bytes")],
+            project.path().to_str().unwrap(),
+        )
+        .unwrap();
+
+        let error = delete_files_transaction_with(
+            &validated,
+            recovery.path(),
+            |source, quarantine| fs::rename(source, quarantine),
+            |index, target, _| {
+                if index == 0 {
+                    fs::rename(&replacement, &target.path).map_err(|error| error.to_string())?;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("Newer file content appeared"), "{error}");
+        assert_eq!(fs::read_to_string(&primary).unwrap(), "new external save");
+        assert_eq!(
+            fs::read_to_string(recovery.path().join("1-post.md")).unwrap(),
+            "approved bytes"
+        );
+    }
+
+    #[test]
+    fn restore_files_transaction_never_clobbers_a_newer_file() {
+        let project = tempfile::tempdir().unwrap();
+        let recovery = tempfile::tempdir().unwrap();
+        let original = project.path().join("post.md");
+        let backup = recovery.path().join("post.md");
+        fs::write(&original, "newer content").unwrap();
+        fs::write(&backup, "deleted content").unwrap();
+        let targets = vec![ValidatedRestoreFileTarget {
+            original_path: original.clone(),
+            recovery_path: backup,
+        }];
+
+        let error = restore_files_transaction_inner(&targets).unwrap_err();
+
+        assert!(error.contains("was not overwritten"), "{error}");
+        assert_eq!(fs::read_to_string(original).unwrap(), "newer content");
+    }
+
+    #[test]
+    fn restore_files_transaction_publishes_complete_bytes_atomically() {
+        let project = tempfile::tempdir().unwrap();
+        let recovery = tempfile::tempdir().unwrap();
+        let original = project.path().join("post.md");
+        let backup = recovery.path().join("post.md");
+        fs::write(&backup, "deleted content").unwrap();
+        let targets = vec![ValidatedRestoreFileTarget {
+            original_path: original.clone(),
+            recovery_path: backup,
+        }];
+
+        restore_files_transaction_inner(&targets).unwrap();
+
+        assert_eq!(fs::read_to_string(original).unwrap(), "deleted content");
     }
 
     #[test]
@@ -2036,48 +2686,31 @@ Regular markdown content here."#;
 
     #[test]
     fn test_validate_app_data_path_valid() {
-        let temp_dir = std::env::temp_dir();
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let app_data_dir = temp_dir.join(format!("app_data_{timestamp}"));
-        let test_file = app_data_dir.join("preferences").join("settings.json");
+        let app_data_dir = tempfile::TempDir::new().unwrap();
+        let test_file = app_data_dir
+            .path()
+            .join("preferences")
+            .join("settings.json");
 
-        // Create test structure - ensure app_data_dir exists first
-        fs::create_dir_all(&app_data_dir).unwrap();
         fs::create_dir_all(test_file.parent().unwrap()).unwrap();
         fs::write(&test_file, "test content").unwrap();
 
         let result = validate_app_data_path(
             &test_file.to_string_lossy(),
-            &app_data_dir.to_string_lossy(),
+            &app_data_dir.path().to_string_lossy(),
         );
 
         assert!(result.is_ok(), "Failed with error: {:?}", result.err());
-
-        // Cleanup
-        let _ = fs::remove_dir_all(&app_data_dir);
     }
 
     #[test]
     fn test_validate_app_data_path_traversal_attack() {
-        let temp_dir = std::env::temp_dir();
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let app_data_dir = temp_dir.join(format!("app_data_{timestamp}"));
-        let malicious_path = app_data_dir.join("../../../etc/passwd");
-
-        // Create app data directory
-        fs::create_dir_all(&app_data_dir).unwrap();
+        let app_data_dir = tempfile::TempDir::new().unwrap();
+        let malicious_path = app_data_dir.path().join("../../../etc/passwd");
 
         let result = validate_app_data_path(
             &malicious_path.to_string_lossy(),
-            &app_data_dir.to_string_lossy(),
+            &app_data_dir.path().to_string_lossy(),
         );
 
         // Should fail due to path traversal
@@ -2087,9 +2720,6 @@ Regular markdown content here."#;
             error.contains("File outside app data directory")
                 || error.contains("Invalid file path")
         );
-
-        // Cleanup
-        let _ = fs::remove_dir_all(&app_data_dir);
     }
 
     #[test]
@@ -2855,8 +3485,7 @@ Content"#;
 
         let result = parse_frontmatter(content);
         // Should either parse correctly or fail gracefully (not corrupt)
-        if result.is_ok() {
-            let parsed = result.unwrap();
+        if let Ok(parsed) = result {
             assert!(parsed.frontmatter.contains_key("title"));
         }
     }
@@ -3063,9 +3692,15 @@ mod frontmatter_merge_tests {
     fn wlog_values() -> IndexMap<String, Value> {
         fm(&[
             ("title", json!("A City Walk in San Francisco")),
-            ("description", json!("A Saturday afternoon walk: two Transamericas.")),
+            (
+                "description",
+                json!("A Saturday afternoon walk: two Transamericas."),
+            ),
             ("pubDate", json!("2024-07-06")),
-            ("heroImage", json!("../../assets/hero/2026/07/sf-city-walk-cover.webp")),
+            (
+                "heroImage",
+                json!("../../assets/hero/2026/07/sf-city-walk-cover.webp"),
+            ),
             ("category", json!("Journal")),
             ("lang", json!("en")),
             ("translationKey", json!("a-city-walk-in-san-francisco")),
@@ -3080,7 +3715,10 @@ mod frontmatter_merge_tests {
         let merged = merge_frontmatter_preserving_format(WLOG_RAW, &new_fm).unwrap();
         let lines: Vec<&str> = merged.lines().collect();
         assert_eq!(lines[0], "title: 'A Better Walk'");
-        assert_eq!(lines[1], "description: 'A Saturday afternoon walk: two Transamericas.'");
+        assert_eq!(
+            lines[1],
+            "description: 'A Saturday afternoon walk: two Transamericas.'"
+        );
         assert_eq!(lines[2], "pubDate: '2024-07-06'");
         assert_eq!(lines[6], "translationKey: 'a-city-walk-in-san-francisco'");
         assert_eq!(lines.len(), 7);
@@ -3097,7 +3735,10 @@ mod frontmatter_merge_tests {
         let mut new_fm = wlog_values();
         new_fm.insert("title".to_string(), json!("it's a walk"));
         let merged = merge_frontmatter_preserving_format(WLOG_RAW, &new_fm).unwrap();
-        assert!(merged.starts_with("title: 'it''s a walk'\n"), "got: {merged}");
+        assert!(
+            merged.starts_with("title: 'it''s a walk'\n"),
+            "got: {merged}"
+        );
     }
 
     #[test]
@@ -3116,7 +3757,10 @@ mod frontmatter_merge_tests {
         let raw = "# owner note\ntitle: 'X'\n\npubDate: '2024-07-06'";
         let new_fm = fm(&[("title", json!("Y")), ("pubDate", json!("2024-07-06"))]);
         let merged = merge_frontmatter_preserving_format(raw, &new_fm).unwrap();
-        assert_eq!(merged, "# owner note\ntitle: 'Y'\n\npubDate: '2024-07-06'\n");
+        assert_eq!(
+            merged,
+            "# owner note\ntitle: 'Y'\n\npubDate: '2024-07-06'\n"
+        );
     }
 
     #[test]

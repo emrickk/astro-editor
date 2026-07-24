@@ -49,6 +49,31 @@ async deleteFile(filePath: string, projectRoot: string) : Promise<Result<null, s
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Atomically quarantines a post or verified translation pair before checking
+ * its bytes. A concurrent atomic save can therefore be preserved or rejected,
+ * but can never be unlinked by this deletion transaction.
+ */
+async deleteFilesTransaction(targets: DeleteFileTarget[], projectRoot: string) : Promise<Result<DeleteFilesResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_files_transaction", { targets, projectRoot }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Restores recovery files through atomic no-clobber links. Existing files are
+ * never truncated or replaced, even if another application saves concurrently.
+ */
+async restoreFilesTransaction(targets: RestoreFileTarget[], projectRoot: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_files_transaction", { targets, projectRoot }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async renameFile(oldPath: string, newPath: string, projectRoot: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("rename_file", { oldPath, newPath, projectRoot }) };
@@ -394,15 +419,6 @@ async openPathInIde(ideCommand: string, filePath: string) : Promise<Result<strin
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Runs the project's configured image drop command for a dropped image.
- * 
- * The command runs via `sh -c` with the project root as working directory
- * and the image path appended as a single quoted argument. Whatever the
- * command prints to stdout is returned verbatim; the frontend inserts it
- * into the editor (typically a markdown image snippet pointing at a CDN).
- * A non-zero exit fails the drop, with stderr as the error message.
- */
 async runImageDropCommand(command: string, imagePath: string, projectPath: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("run_image_drop_command", { command, imagePath, projectPath }) };
@@ -412,10 +428,9 @@ async runImageDropCommand(command: string, imagePath: string, projectPath: strin
 }
 },
 /**
- * Downloads an image over https to a destination inside the project and
- * returns the absolute destination path. Used by the cover picker to bring
- * one of a post's remote (CDN) images into the repo's assets, where a
- * build-time-optimized cover must live.
+ * Downloads a verified image over public HTTPS to a new destination inside
+ * the project. Redirects, response size, content, symlinks, and overwrites
+ * are all checked before an atomic install.
  */
 async downloadImageToProject(url: string, destPath: string, projectPath: string) : Promise<Result<string, string>> {
     try {
@@ -426,10 +441,44 @@ async downloadImageToProject(url: string, destPath: string, projectPath: string)
 }
 },
 /**
- * Runs a project-level command (pull, publish preflight, publish confirm)
- * from the project root, streaming each merged stdout/stderr line to the
- * frontend as a `project-command-log` event and returning the full output.
- * Non-zero exit fails with the output tail as the error message.
+ * Safely fast-forwards the current project while preserving a dirty working
+ * tree. Local changes are merged in memory first, so conflicts never reach
+ * the checkout and successful reconciliation leaves drafts unstaged.
+ */
+async safeGitPull(projectPath: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("safe_git_pull", { projectPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listPullRecoveries(projectPath: string) : Promise<Result<PullRecovery[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_pull_recoveries", { projectPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restorePullRecovery(projectPath: string, recoveryId: string, destinationDirectory: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_pull_recovery", { projectPath, recoveryId, destinationDirectory }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deletePullRecovery(projectPath: string, recoveryId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_pull_recovery", { projectPath, recoveryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Runs a configured project command with bounded output and a timeout.
  */
 async runProjectCommand(command: string, projectPath: string) : Promise<Result<string, string>> {
     try {
@@ -439,13 +488,7 @@ async runProjectCommand(command: string, projectPath: string) : Promise<Result<s
     else return { status: "error", error: e  as any };
 }
 },
-/**
- * Starts a long-running review server (e.g. a production preview) in its
- * own process group and returns the group leader's pid. The caller stops it
- * with `stop_review_server`. Each output line streams to the frontend as a
- * `review-server-log` event so the UI can show build progress and readiness.
- */
-async startReviewServer(command: string, projectPath: string) : Promise<Result<number, string>> {
+async startReviewServer(command: string, projectPath: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("start_review_server", { command, projectPath }) };
 } catch (e) {
@@ -454,12 +497,12 @@ async startReviewServer(command: string, projectPath: string) : Promise<Result<n
 }
 },
 /**
- * Stops a review server started by `start_review_server` by signalling its
- * whole process group (npm -> node -> server chains die together).
+ * Stops only a review process created by this application instance. This
+ * returns only after child.wait() confirms exit, escalating from TERM to KILL.
  */
-async stopReviewServer(pid: number) : Promise<Result<null, string>> {
+async stopReviewServer(id: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("stop_review_server", { pid }) };
+    return { status: "ok", data: await TAURI_INVOKE("stop_review_server", { id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -524,6 +567,9 @@ async getLinuxUiFont() : Promise<Result<string | null, string>> {
 export type AppInfo = { version: string; platform: string }
 export type Collection = { name: string; path: string; complete_schema?: string | null }
 export type ComponentFramework = "astro" | "react" | "vue" | "svelte"
+export type DeleteFileTarget = { filePath: string; expectedContent: string }
+export type DeleteFilesResult = { recoveryDirectory: string; files: DeletedFileRecovery[] }
+export type DeletedFileRecovery = { originalPath: string; recoveryPath: string }
 export type DirectoryInfo = { name: string; relative_path: string; full_path: string }
 export type DirectoryScanResult = { subdirectories: DirectoryInfo[]; files: FileEntry[] }
 export type FileEntry = { id: string; path: string; name: string; extension: string; collection: string; last_modified: number | null; frontmatter: Partial<{ [key in string]: JsonValue }> | null }
@@ -531,6 +577,10 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | Partial
 export type MarkdownContent = { frontmatter: Partial<{ [key in string]: JsonValue }>; content: string; raw_frontmatter: string; imports: string }
 export type MdxComponent = { name: string; file_path: string; props: PropInfo[]; has_slot: boolean; description: string | null; framework: ComponentFramework }
 export type PropInfo = { name: string; prop_type: string; is_optional: boolean; default_value: string | null }
+export type PullRecovery = { id: string; status: PullRecoveryStatus; createdAt: string; recoveryRef: string; snapshot: string; files: PullRecoveryFile[] }
+export type PullRecoveryFile = { relativePath: string; sourceTree: string; size: number }
+export type PullRecoveryStatus = "completed" | "needsAttention"
+export type RestoreFileTarget = { originalPath: string; recoveryPath: string }
 
 /** tauri-specta globals **/
 

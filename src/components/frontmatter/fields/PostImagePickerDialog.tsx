@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ask } from '@tauri-apps/plugin-dialog'
 import {
   Dialog,
   DialogContent,
@@ -7,16 +8,16 @@ import {
   DialogTitle,
 } from '../../ui/dialog'
 import { Badge } from '../../ui/badge'
-import { useEditorStore } from '../../../store/editorStore'
 import {
   extractImageUrls,
-  isRenderableImageUrl,
+  isDownloadableImageUrl,
   meetsCoverSpec,
 } from '../../../lib/images'
 
 interface PostImagePickerDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  editorContent: string
   onSelect: (url: string) => void
 }
 
@@ -29,16 +30,28 @@ interface PostImagePickerDialogProps {
 export function PostImagePickerDialog({
   open,
   onOpenChange,
+  editorContent,
   onSelect,
 }: PostImagePickerDialogProps) {
-  const editorContent = useEditorStore(state =>
-    open ? state.editorContent : ''
-  )
   const [sizes, setSizes] = useState<
     Record<string, { width: number; height: number }>
   >({})
 
-  const urls = extractImageUrls(editorContent).filter(isRenderableImageUrl)
+  const urls = extractImageUrls(editorContent).filter(isDownloadableImageUrl)
+
+  const handleSelect = async (
+    url: string,
+    size: { width: number; height: number }
+  ) => {
+    if (!meetsCoverSpec(size.width, size.height)) {
+      const confirmed = await ask(
+        `This image is ${size.width}x${size.height}, below the recommended cover size. It may look blurry on large cards. Use it anyway?`,
+        { title: 'Image Below Cover Spec', kind: 'warning' }
+      )
+      if (!confirmed) return
+    }
+    onSelect(url)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -53,21 +66,21 @@ export function PostImagePickerDialog({
         </DialogHeader>
         {urls.length === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center">
-            This post has no remote images yet.
+            This post has no downloadable HTTPS images yet.
           </p>
         ) : (
           <div className="grid grid-cols-3 gap-3 max-h-[420px] overflow-y-auto pr-1">
             {urls.map(url => {
               const size = sizes[url]
-              const belowSpec =
-                size && !meetsCoverSpec(size.width, size.height)
+              const belowSpec = size && !meetsCoverSpec(size.width, size.height)
               return (
                 <button
                   key={url}
                   type="button"
-                  onClick={() => onSelect(url)}
-                  className="group relative rounded-md border overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-ring"
-                  title={url}
+                  onClick={() => size && void handleSelect(url, size)}
+                  disabled={!size}
+                  className="group relative rounded-md border overflow-hidden text-left focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-wait disabled:opacity-70"
+                  title={size ? url : 'Loading image dimensions'}
                 >
                   <img
                     src={url}
@@ -83,6 +96,12 @@ export function PostImagePickerDialog({
                           width: img.naturalWidth,
                           height: img.naturalHeight,
                         },
+                      }))
+                    }}
+                    onError={() => {
+                      setSizes(prev => ({
+                        ...prev,
+                        [url]: { width: 0, height: 0 },
                       }))
                     }}
                   />

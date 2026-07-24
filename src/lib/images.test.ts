@@ -3,7 +3,11 @@ import {
   extractImageUrls,
   imageUrlsOnLine,
   coverDestinationFor,
+  findAvailableCoverDestination,
+  isDownloadableImageUrl,
+  isSameFileIdentity,
   meetsCoverSpec,
+  numberedCoverDestination,
 } from './images'
 
 const BODY = `Some prose.
@@ -32,9 +36,9 @@ describe('extractImageUrls', () => {
 
 describe('imageUrlsOnLine', () => {
   it('keeps only renderable urls', () => {
-    expect(imageUrlsOnLine('![x](../../local.png) ![y](https://a.com/b.png)')).toEqual([
-      'https://a.com/b.png',
-    ])
+    expect(
+      imageUrlsOnLine('![x](../../local.png) ![y](https://a.com/b.png)')
+    ).toEqual(['https://a.com/b.png'])
   })
 })
 
@@ -56,6 +60,58 @@ describe('coverDestinationFor', () => {
         new Date('2026-07-22T00:00:00Z')
       )
     ).toBe('src/assets/hero/2026/07/My-20Photo.webp')
+  })
+})
+
+describe('downloadable image URLs', () => {
+  it('matches the HTTPS-only backend contract', () => {
+    expect(isDownloadableImageUrl('https://example.com/image.webp')).toBe(true)
+    expect(isDownloadableImageUrl('http://example.com/image.webp')).toBe(false)
+    expect(isDownloadableImageUrl('data:image/png;base64,abc')).toBe(false)
+  })
+})
+
+describe('cover destination collisions', () => {
+  it('adds a suffix before the extension', () => {
+    expect(numberedCoverDestination('src/assets/cover.webp', 2)).toBe(
+      'src/assets/cover-2.webp'
+    )
+    expect(numberedCoverDestination('src/assets/cover', 3)).toBe(
+      'src/assets/cover-3'
+    )
+  })
+
+  it('finds the first unused destination without overwriting', async () => {
+    const existing = new Set([
+      'src/assets/cover.webp',
+      'src/assets/cover-2.webp',
+    ])
+    await expect(
+      findAvailableCoverDestination('src/assets/cover.webp', path =>
+        Promise.resolve(existing.has(path))
+      )
+    ).resolves.toBe('src/assets/cover-3.webp')
+  })
+})
+
+describe('file identity guard', () => {
+  const original = { id: 'posts/a', path: '/project/posts/a.md' }
+
+  it('accepts only the exact file captured before async work', () => {
+    expect(isSameFileIdentity(original, { ...original })).toBe(true)
+    expect(
+      isSameFileIdentity(original, {
+        id: 'posts/b',
+        path: '/project/posts/b.md',
+      })
+    ).toBe(false)
+    expect(
+      isSameFileIdentity(original, {
+        id: original.id,
+        path: '/other-project/posts/a.md',
+      })
+    ).toBe(false)
+    expect(isSameFileIdentity(original, null)).toBe(false)
   })
 })
 

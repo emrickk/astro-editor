@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { EditorView } from '@codemirror/view'
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useEditorStore } from '../../store/editorStore'
 import { useUIStore } from '../../store/uiStore'
@@ -29,6 +29,7 @@ const EditorViewComponent: React.FC = () => {
   const currentFileId = useEditorStore(state => state.currentFile?.id)
   const currentFilePath = useEditorStore(state => state.currentFile?.path)
   const projectPath = useProjectStore(state => state.projectPath)
+  const interactionLocked = useEditorStore(state => state.isOperationLocked)
   const focusModeEnabled = useUIStore(state => state.focusModeEnabled)
   const typewriterModeEnabled = useUIStore(state => state.typewriterModeEnabled)
   const editorRef = useRef<HTMLDivElement>(null)
@@ -36,6 +37,7 @@ const EditorViewComponent: React.FC = () => {
   const [isAltPressed, setIsAltPressed] = useState(false)
   const altDispatchedRef = useRef(false) // Track whether we've dispatched Alt effect
   const isProgrammaticUpdate = useRef(false)
+  const editableCompartment = useRef(new Compartment())
 
   // Typing detection for distraction-free mode
   const typingCharCount = useRef(0)
@@ -101,6 +103,15 @@ const EditorViewComponent: React.FC = () => {
   useEffect(() => {
     handleModeChange()
   }, [handleModeChange, focusModeEnabled, typewriterModeEnabled])
+
+  useEffect(() => {
+    if (!viewRef.current) return
+    viewRef.current.dispatch({
+      effects: editableCompartment.current.reconfigure(
+        EditorView.editable.of(!interactionLocked)
+      ),
+    })
+  }, [interactionLocked])
 
   // Track Alt key state for URL highlighting - moved back to component for timing
   // Uses ref for dispatch tracking (stable listener) + state for React rendering (useImageHover)
@@ -169,6 +180,9 @@ const EditorViewComponent: React.FC = () => {
       doc: editorContent,
       extensions: [
         ...extensions,
+        editableCompartment.current.of(
+          EditorView.editable.of(!useEditorStore.getState().isOperationLocked)
+        ),
         EditorView.updateListener.of(update => {
           if (update.docChanged && !isProgrammaticUpdate.current) {
             const newContent = update.state.doc.toString()

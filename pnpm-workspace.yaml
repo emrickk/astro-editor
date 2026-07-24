@@ -3,6 +3,9 @@ packages:
   - test/*
   - '!telemetry-worker'
 
+overrides:
+  '@lezer/common': ^1.5.0
+
 onlyBuiltDependencies:
   - '@ast-grep/cli'
   - '@tailwindcss/oxide'

@@ -24,6 +24,7 @@ import {
 } from './persistence'
 import { discoverProject, isSameProject } from './utils'
 import { DEFAULT_PROJECT_SETTINGS } from './defaults'
+import { loadBuiltInProjectPreset } from './project-presets'
 
 export class ProjectRegistryManager {
   private registry: ProjectRegistry | null = null
@@ -348,9 +349,41 @@ export class ProjectRegistryManager {
    */
   async getEffectiveSettings(projectId: string): Promise<ProjectSettings> {
     const projectData = await this.getProjectData(projectId)
+    const metadata = this.registry?.projects[projectId]
+    const presetSettings = metadata
+      ? await loadBuiltInProjectPreset(metadata.path)
+      : {}
 
     if (!projectData) {
-      return { ...DEFAULT_PROJECT_SETTINGS }
+      return {
+        ...DEFAULT_PROJECT_SETTINGS,
+        ...presetSettings,
+        pathOverrides: {
+          ...DEFAULT_PROJECT_SETTINGS.pathOverrides,
+          ...presetSettings.pathOverrides,
+        },
+        frontmatterMappings: {
+          ...DEFAULT_PROJECT_SETTINGS.frontmatterMappings,
+          ...presetSettings.frontmatterMappings,
+        },
+      }
+    }
+
+    const storedSettings = { ...projectData.settings }
+    for (const key of [
+      'imageDropCommand',
+      'coverImagesDirectory',
+      'pullCommand',
+      'publishPreflightCommand',
+      'publishReviewCommand',
+      'publishConfirmCommand',
+    ] as const) {
+      if (
+        typeof storedSettings[key] === 'string' &&
+        !storedSettings[key].trim()
+      ) {
+        delete storedSettings[key]
+      }
     }
 
     // Merge hard-coded defaults with project-specific settings. Spread the
@@ -358,17 +391,21 @@ export class ProjectRegistryManager {
     // settings like imageDropCommand or the publish pipeline) pass through
     // without each needing to be listed here.
     return {
-      ...projectData.settings,
+      ...presetSettings,
+      ...storedSettings,
       pathOverrides: {
         ...DEFAULT_PROJECT_SETTINGS.pathOverrides,
-        ...projectData.settings.pathOverrides,
+        ...presetSettings.pathOverrides,
+        ...storedSettings.pathOverrides,
       },
       frontmatterMappings: {
         ...DEFAULT_PROJECT_SETTINGS.frontmatterMappings,
-        ...projectData.settings.frontmatterMappings,
+        ...presetSettings.frontmatterMappings,
+        ...storedSettings.frontmatterMappings,
       },
       // Include collections array if present
-      collections: projectData.settings.collections || [],
+      collections:
+        storedSettings.collections || presetSettings.collections || [],
     }
   }
 

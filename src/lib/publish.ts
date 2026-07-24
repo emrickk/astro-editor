@@ -28,15 +28,49 @@ export interface PreflightResult {
   empty: boolean
 }
 
+export class PreflightProtocolError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PreflightProtocolError'
+  }
+}
+
+const EMPTY_PREFLIGHT_RE =
+  /^\s*(?:nothing to (?:publish|ship)(?: for .+)?|no changes(?: to publish)?|already up[ -]to[ -]date)\s*[.!]?\s*$/im
+
 /**
- * Parses preflight output. File paths are the indented lines before the
- * digest line; `empty` is set when no digest is present (a successful run
- * with nothing to ship prints no digest).
+ * Parses the small preflight protocol used by publish commands. A successful
+ * preflight must explicitly report either a changeset digest or a recognized
+ * "nothing to ship" line. Treating arbitrary output as an empty changeset
+ * would hide broken or misconfigured commands.
  */
 export function parsePreflightOutput(output: string): PreflightResult {
   const lines = output.split('\n')
-  const digestMatch = output.match(/^\s*changeset digest:\s*(\S+)\s*$/m)
-  const digest = digestMatch?.[1] ?? null
+  const digestMatches = [
+    ...output.matchAll(/^\s*changeset digest:\s*(\S+)\s*$/gm),
+  ]
+
+  if (digestMatches.length === 0) {
+    if (EMPTY_PREFLIGHT_RE.test(output)) {
+      return { digest: null, files: [], empty: true }
+    }
+    throw new PreflightProtocolError(
+      'Publish preflight returned an unrecognized response. It must print either "changeset digest: <token>" with the changed files or "nothing to ship".'
+    )
+  }
+
+  if (digestMatches.length > 1) {
+    throw new PreflightProtocolError(
+      'Publish preflight returned more than one changeset digest.'
+    )
+  }
+
+  const digest = digestMatches[0]?.[1] ?? null
+  if (digest && !/^[A-Za-z0-9._:-]+$/.test(digest)) {
+    throw new PreflightProtocolError(
+      'Publish preflight returned an unsafe changeset digest.'
+    )
+  }
 
   const files: string[] = []
   for (const line of lines) {
@@ -45,12 +79,101 @@ export function parsePreflightOutput(output: string): PreflightResult {
     if (match?.[1]) files.push(match[1])
   }
 
-  return { digest, files, empty: digest === null }
+  if (!digest || files.length === 0) {
+    throw new PreflightProtocolError(
+      'Publish preflight returned a digest without any changed files.'
+    )
+  }
+
+  return { digest, files, empty: false }
+}
+
+export interface PublishCommandValidation {
+  valid: boolean
+  error: string | null
+}
+
+/** Validates the two-phase command contract before any command is run. */
+export function validatePublishCommands(
+  preflightTemplate: string | undefined,
+  confirmTemplate: string | undefined,
+  reviewTemplate?: string
+): PublishCommandValidation {
+  const preflight = preflightTemplate?.trim()
+  const confirm = confirmTemplate?.trim()
+  if (!preflight || !confirm) {
+    return {
+      valid: false,
+      error: 'Configure both publish preflight and confirm commands.',
+    }
+  }
+  if (!confirm.includes('{digest}')) {
+    return {
+      valid: false,
+      error: 'The publish confirm command must include {digest}.',
+    }
+  }
+  if (commandWantsFiles(preflight) !== commandWantsFiles(confirm)) {
+    return {
+      valid: false,
+      error:
+        'The publish preflight and confirm commands must either both include {files} or both omit it.',
+    }
+  }
+  if (commandWantsFiles(reviewTemplate) && !commandWantsFiles(preflight)) {
+    return {
+      valid: false,
+      error:
+        'A review command using {files} requires {files} in both publish commands.',
+    }
+  }
+  return { valid: true, error: null }
+}
+
+/** Turns common safe git refusals into an actionable, non-destructive message. */
+export function formatPullError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (
+    /local changes to the following files would be overwritten by merge/i.test(
+      message
+    )
+  ) {
+    const fileMatch = message.match(
+      /overwritten by merge:\s*([\s\S]*?)\s*Please commit/i
+    )
+    const files = fileMatch?.[1]
+      ?.split(/\s+/)
+      .map(file => file.trim())
+      .filter(Boolean)
+    const fileSummary = files?.length ? ` (${files.join(', ')})` : ''
+    return `Pull stopped to protect your local changes${fileSummary}. Reconcile those edits with GitHub (or commit them) before pulling again. The app did not stash or overwrite anything.`
+  }
+  if (
+    /not possible to fast-forward|diverging branches|non-fast-forward/i.test(
+      message
+    )
+  ) {
+    return 'Pull stopped because local and remote history have diverged. Nothing was changed. Reconcile the branches in Git, then try again.'
+  }
+  return message || 'Unknown error'
 }
 
 export interface PublishFinding {
   file: string
   message: string
+}
+
+export type PublishCompletion = 'deployed' | 'pushed' | 'completed'
+
+/**
+ * Classifies what a successful command actually proved. A zero exit code can
+ * mean the commit was pushed while the deploy watcher was unavailable, so the
+ * UI must not call that state "Published" unless deployment was confirmed.
+ */
+export function classifyPublishCompletion(output: string): PublishCompletion {
+  if (/^deploy complete\b/im.test(output)) return 'deployed'
+  if (/^pushed\s+\S+/im.test(output)) return 'pushed'
+  return 'completed'
 }
 
 /**
@@ -92,7 +215,7 @@ export function commandWantsFiles(template: string | undefined): boolean {
  */
 export function expandPublishCommand(
   template: string,
-  { digest, files }: { digest?: string; files?: string[] }
+  { digest, files }: { digest?: string; files?: readonly string[] }
 ): string {
   let command = template
   if (digest !== undefined) {
@@ -103,9 +226,7 @@ export function expandPublishCommand(
     command = command.replace(
       /(--?[\w-]+)\s+\{files\}|\{files\}/g,
       (_match, flag: string | undefined) =>
-        flag
-          ? quoted.map(f => `${flag} ${f}`).join(' ')
-          : quoted.join(' ')
+        flag ? quoted.map(f => `${flag} ${f}`).join(' ') : quoted.join(' ')
     )
   }
   return command

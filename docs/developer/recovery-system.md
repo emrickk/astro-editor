@@ -4,6 +4,15 @@
 
 The app includes an automatic crash recovery system that saves your work when normal save operations fail. This ensures no data loss in case of system issues, permission problems, or unexpected errors.
 
+## Pull Safety Copies
+
+Pull safety copies are separate from crash recovery. If a file changes while a safe Pull is finishing, Astro Editor automatically retains the newer file version instead of deleting or overwriting it.
+
+- At startup, the app checks the open project and shows a notice when retained copies need attention. The notice opens **Project Settings > Pull Safety Copies** directly.
+- Project Settings lists each retained group with its date, files, and sizes. Copies from an interrupted or incompletely sealed Pull are marked **Needs attention** and shown first.
+- **Restore copies** writes the saved versions into a new folder inside a destination chosen by the owner. It never overwrites project files, and the retained entry remains available after restore.
+- **Delete permanently** is the only cleanup path. It requires explicit confirmation before removing the retained files and their recovery reference.
+
 ## How It Works
 
 When a save operation fails, the system automatically:

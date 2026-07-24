@@ -15,6 +15,49 @@ import { useEditorStore } from './editorStore'
 import { queryClient } from '../lib/query-client'
 import { queryKeys } from '../lib/query-keys'
 import { wasStartupClaimedByDeepLink } from '../lib/deep-link'
+import {
+  getActiveProjectOperation,
+  tryAcquireProjectOperation,
+  type ProjectOperationLease,
+} from './projectOperationLease'
+
+let projectSwitchGeneration = 0
+
+function isCurrentProjectSwitch(
+  generation: number,
+  lease: ProjectOperationLease
+): boolean {
+  return generation === projectSwitchGeneration && lease.isCurrent()
+}
+
+function clearEditorForProjectSwitch(): void {
+  const { autoSaveTimeoutId } = useEditorStore.getState()
+  if (autoSaveTimeoutId) clearTimeout(autoSaveTimeoutId)
+  useEditorStore.setState({
+    currentFile: null,
+    editorContent: '',
+    frontmatter: {},
+    rawFrontmatter: '',
+    imports: '',
+    isDirty: false,
+    isFrontmatterDirty: false,
+    autoSaveTimeoutId: null,
+    lastSaveTimestamp: null,
+  })
+}
+
+function showProjectSwitchBusyToast(): void {
+  const active = getActiveProjectOperation()
+  if (active) {
+    toast.info('Finish the current project operation first', {
+      description: `${active.kind[0]?.toUpperCase()}${active.kind.slice(1)} is still running.`,
+    })
+    return
+  }
+  toast.info('Finish the current pull or publish first', {
+    description: 'Project switching is temporarily paused.',
+  })
+}
 
 interface ProjectState {
   // Core identifiers
@@ -22,6 +65,8 @@ interface ProjectState {
   currentProjectId: string | null
   selectedCollection: string | null
   currentSubdirectory: string | null // Relative path from collection root, e.g., "2024/january"
+  /** Controlled by the shared operation lease while project identity is fixed. */
+  isOperationLocked: boolean
 
   // Settings
   globalSettings: GlobalSettings | null
@@ -54,6 +99,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   currentProjectId: null,
   selectedCollection: null,
   currentSubdirectory: null,
+  isOperationLocked: false,
   globalSettings: null,
   currentProjectSettings: null,
   _unlistenFileChanged: null,
@@ -64,28 +110,42 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   // Actions
   setProject: (path: string) => {
+    const operationLease = tryAcquireProjectOperation('switch', path)
+    if (!operationLease) {
+      showProjectSwitchBusyToast()
+      return
+    }
+    const generation = ++projectSwitchGeneration
+
+    // The switch lease intentionally locks public editor actions, so clear the
+    // old document directly while this operation owns the shared mutex.
+    clearEditorForProjectSwitch()
+
     void (async () => {
       try {
         await info(
           `Astro Editor [PROJECT_SETUP] Starting project setup: ${path}`
         )
-
-        // Close any currently open file when switching projects
-        useEditorStore.getState().closeCurrentFile()
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
 
         // Register the project and get its ID
         await info(`Astro Editor [PROJECT_SETUP] Registering project: ${path}`)
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
         const projectId = await projectRegistryManager.registerProject(path)
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
         await debug(
           `Astro Editor [PROJECT_SETUP] Project ID generated: ${projectId}`
         )
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
 
         // Load project settings
         await info(
           `Astro Editor [PROJECT_SETUP] Loading project settings for: ${projectId}`
         )
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
         const projectSettings =
           await projectRegistryManager.getEffectiveSettings(projectId)
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
 
         set({
           projectPath: path,
@@ -98,12 +158,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         // Project persistence is now handled by the project registry system
 
         await info(`Astro Editor [PROJECT_SETUP] Starting file watcher`)
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
         await get().startFileWatcher()
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
 
         await info(
           `Astro Editor [PROJECT_SETUP] Project setup completed successfully: ${projectId}`
         )
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
       } catch (error) {
+        if (!isCurrentProjectSwitch(generation, operationLease)) return
         const errorMsg = formatErrorForLogging(
           'PROJECT_SETUP',
           'Failed during project setup',
@@ -119,6 +183,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             error instanceof Error ? error.message : 'Unknown error occurred',
         })
         await logError(errorMsg)
+      } finally {
+        operationLease.release()
       }
     })()
   },

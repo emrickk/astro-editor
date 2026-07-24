@@ -8,15 +8,35 @@ import type { FileEntry } from '@/types'
 import { useProjectStore } from '../../store/projectStore'
 import { useEditorStore } from '../../store/editorStore'
 import { usePublishStore } from '../../store/publishStore'
+import {
+  getActiveProjectOperation,
+  tryAcquireProjectOperation,
+} from '../../store/projectOperationLease'
 import { openInIde } from '../../lib/ide'
 import { getTitle } from '@/lib/files/sorting'
 import { getSiblingCandidatePaths } from '../../lib/translations'
-import {
-  getEffectiveContentDirectory,
-} from '../../lib/project-registry'
+import { getEffectiveContentDirectory } from '../../lib/project-registry'
 import { ASTRO_PATHS } from '../../lib/constants'
 import { getPlatform } from '@/hooks/usePlatform'
 import { getPlatformString } from '@/lib/platform-strings'
+import { toast } from '@/lib/toast'
+
+interface StagedDeletionFile {
+  originalPath: string
+  backupPath: string
+}
+
+interface StagedDeletion {
+  recoveryDirectory: string
+  files: StagedDeletionFile[]
+}
+
+function operationBusyMessage(): string {
+  const active = getActiveProjectOperation()
+  return active
+    ? `Wait for the current ${active.kind} operation to finish.`
+    : 'Wait for the current project operation to finish.'
+}
 
 interface ContextMenuOptions {
   file: FileEntry
@@ -32,8 +52,8 @@ export class FileContextMenu {
   ): Promise<boolean> {
     return ask(
       withSibling
-        ? `Delete "${fileName}" and its translation file? Both language files will be removed.`
-        : `Are you sure you want to delete "${fileName}"?`,
+        ? `Delete "${fileName}" and its verified translation file? Both files will be kept in Astro Editor's recovery folder and can be restored with Undo.`
+        : `Delete "${fileName}"? A recovery copy will be kept and can be restored with Undo.`,
       {
         title: 'Delete Post',
         kind: 'warning',
@@ -43,6 +63,7 @@ export class FileContextMenu {
 
   /** Existing sibling translation file for a post, resolved on disk. */
   private static async findSiblingPath(
+    file: FileEntry,
     filePath: string,
     projectPath: string
   ): Promise<string | null> {
@@ -50,17 +71,157 @@ export class FileContextMenu {
     const contentDirectory = getEffectiveContentDirectory(
       currentProjectSettings
     )
+    const source = await commands.parseMarkdownContent(filePath, projectPath)
+    if (source.status === 'error') {
+      throw new Error(
+        `Could not verify this post's translation key: ${source.error}`
+      )
+    }
+    const sourceKey = source.data.frontmatter.translationKey
+    if (typeof sourceKey !== 'string' || !sourceKey.trim()) return null
+
     for (const candidate of getSiblingCandidatePaths(filePath)) {
       const result = await commands.resolveFileEntry(
         candidate,
         projectPath,
         contentDirectory !== ASTRO_PATHS.CONTENT_DIR ? contentDirectory : null
       )
-      if (result.status === 'ok' && result.data) {
+      if (
+        result.status !== 'ok' ||
+        !result.data ||
+        result.data.collection !== file.collection
+      )
+        continue
+
+      const sibling = await commands.parseMarkdownContent(
+        result.data.path,
+        projectPath
+      )
+      if (sibling.status === 'error') continue
+      const siblingKey = sibling.data.frontmatter.translationKey
+      if (
+        typeof siblingKey === 'string' &&
+        siblingKey.trim() === sourceKey.trim()
+      ) {
         return result.data.path
       }
     }
     return null
+  }
+
+  private static async guardUnsavedFile(): Promise<void> {
+    const { currentFile, isDirty, saveFile } = useEditorStore.getState()
+    if (!currentFile || !isDirty) return
+
+    await saveFile(false)
+    if (useEditorStore.getState().isDirty) {
+      throw new Error(
+        'The open file still has unsaved changes. Resolve the save error before deleting a post.'
+      )
+    }
+  }
+
+  private static async deleteToRecovery(
+    paths: string[],
+    projectPath: string
+  ): Promise<StagedDeletion> {
+    const targets = []
+    for (const originalPath of paths) {
+      const result = await commands.readFile(originalPath, projectPath)
+      if (result.status === 'error') throw new Error(result.error)
+      targets.push({ filePath: originalPath, expectedContent: result.data })
+    }
+
+    const result = await commands.deleteFilesTransaction(targets, projectPath)
+    if (result.status === 'error') throw new Error(result.error)
+    return {
+      recoveryDirectory: result.data.recoveryDirectory,
+      files: result.data.files.map(file => ({
+        originalPath: file.originalPath,
+        backupPath: file.recoveryPath,
+      })),
+    }
+  }
+
+  private static async restoreDeletion(
+    staged: StagedDeletion,
+    projectPath: string,
+    onRefresh?: () => void
+  ): Promise<void> {
+    const result = await commands.restoreFilesTransaction(
+      staged.files.map(file => ({
+        originalPath: file.originalPath,
+        recoveryPath: file.backupPath,
+      })),
+      projectPath
+    )
+    if (result.status === 'error') {
+      throw new Error(
+        `Could not restore every file. Recovery copies remain in ${staged.recoveryDirectory}. ${result.error}`
+      )
+    }
+
+    await remove(staged.recoveryDirectory, { recursive: true }).catch(() => {})
+    onRefresh?.()
+  }
+
+  private static closeDeletedFile(paths: string[]): FileEntry | null {
+    const { currentFile, autoSaveTimeoutId } = useEditorStore.getState()
+    if (!currentFile || !paths.includes(currentFile.path)) return null
+    if (autoSaveTimeoutId) clearTimeout(autoSaveTimeoutId)
+
+    useEditorStore.setState({
+      currentFile: null,
+      editorContent: '',
+      frontmatter: {},
+      rawFrontmatter: '',
+      imports: '',
+      isDirty: false,
+      isFrontmatterDirty: false,
+      autoSaveTimeoutId: null,
+      lastSaveTimestamp: null,
+    })
+    return currentFile
+  }
+
+  private static async undoDeletion(
+    staged: StagedDeletion,
+    projectPath: string,
+    fileToReopen: FileEntry | null,
+    onRefresh?: () => void
+  ): Promise<void> {
+    if (useProjectStore.getState().projectPath !== projectPath) {
+      toast.error('Restore unavailable', {
+        description: 'Switch back to the original project before restoring.',
+      })
+      return
+    }
+
+    const operationLease = tryAcquireProjectOperation('restore', projectPath)
+    if (!operationLease) {
+      toast.error('Restore unavailable', {
+        description: operationBusyMessage(),
+      })
+      return
+    }
+
+    let restored = false
+    try {
+      await FileContextMenu.restoreDeletion(staged, projectPath, onRefresh)
+      restored = true
+    } catch (error) {
+      toast.error('Restore failed', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      operationLease.release()
+    }
+
+    if (!restored) return
+    if (!useEditorStore.getState().currentFile && fileToReopen) {
+      useEditorStore.getState().openFile(fileToReopen)
+    }
+    toast.success('Post restored')
   }
 
   /**
@@ -74,35 +235,60 @@ export class FileContextMenu {
     projectPath: string,
     onRefresh?: () => void
   ): Promise<void> {
-    const siblingPath = await FileContextMenu.findSiblingPath(
-      file.path,
-      projectPath
-    )
-    const confirmed = await FileContextMenu.showConfirmationDialog(
-      fileName,
-      siblingPath !== null
-    )
-    if (!confirmed) return
-
-    await remove(file.path)
-    if (siblingPath) {
-      await remove(siblingPath)
+    if (useProjectStore.getState().projectPath !== projectPath) {
+      throw new Error('The active project changed before deletion started.')
     }
+    const operationLease = tryAcquireProjectOperation('delete', projectPath)
+    if (!operationLease) throw new Error(operationBusyMessage())
 
-    const { currentFile, closeCurrentFile } = useEditorStore.getState()
-    if (
-      currentFile &&
-      (currentFile.path === file.path || currentFile.path === siblingPath)
-    ) {
-      closeCurrentFile()
-    }
-    if (onRefresh) {
-      onRefresh()
+    let staged: StagedDeletion
+    try {
+      await FileContextMenu.guardUnsavedFile()
+      const siblingPath = await FileContextMenu.findSiblingPath(
+        file,
+        file.path,
+        projectPath
+      )
+      const confirmed = await FileContextMenu.showConfirmationDialog(
+        fileName,
+        siblingPath !== null
+      )
+      if (!confirmed) return
+
+      const paths = [file.path, siblingPath].filter(
+        (path): path is string => path !== null
+      )
+      const stagedDeletion = await FileContextMenu.deleteToRecovery(
+        paths,
+        projectPath
+      )
+      staged = stagedDeletion
+
+      const fileToReopen = FileContextMenu.closeDeletedFile(paths)
+      onRefresh?.()
+      toast.success(paths.length === 2 ? 'Post pair deleted' : 'Post deleted', {
+        description: `Recovery copies are stored in ${stagedDeletion.recoveryDirectory}`,
+        duration: 12_000,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void FileContextMenu.undoDeletion(
+              stagedDeletion,
+              projectPath,
+              fileToReopen,
+              onRefresh
+            )
+          },
+        },
+      })
+    } finally {
+      operationLease.release()
     }
 
     // A post that was ever published stays on the site until the removal
     // ships. Offer it right here; an unpublished draft just reports
     // "nothing to publish".
+    if (useProjectStore.getState().projectPath !== projectPath) return
     const { currentProjectSettings } = useProjectStore.getState()
     if (
       currentProjectSettings?.publishPreflightCommand?.trim() &&
@@ -116,9 +302,11 @@ export class FileContextMenu {
         const prefix = projectPath.endsWith('/')
           ? projectPath
           : `${projectPath}/`
-        const relPaths = [file.path, siblingPath]
-          .filter((p): p is string => p !== null)
-          .map(p => (p.startsWith(prefix) ? p.slice(prefix.length) : p))
+        const relPaths = staged.files.map(({ originalPath }) =>
+          originalPath.startsWith(prefix)
+            ? originalPath.slice(prefix.length)
+            : originalPath
+        )
         void usePublishStore.getState().startPublish(relPaths)
       }
     }
@@ -301,6 +489,10 @@ export class FileContextMenu {
             } catch (error) {
               // eslint-disable-next-line no-console
               console.error('Failed to delete file:', error)
+              toast.error('Failed to delete post', {
+                description:
+                  error instanceof Error ? error.message : String(error),
+              })
             }
           })()
         },

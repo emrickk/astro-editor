@@ -22,6 +22,8 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         crate::commands::files::write_file,
         crate::commands::files::create_file,
         crate::commands::files::delete_file,
+        crate::commands::files::delete_files_transaction,
+        crate::commands::files::restore_files_transaction,
         crate::commands::files::rename_file,
         crate::commands::files::copy_file_to_assets,
         crate::commands::files::copy_file_to_assets_with_override,
@@ -67,6 +69,11 @@ pub fn generate_bindings() -> Builder<tauri::Wry> {
         crate::commands::image_handler::run_image_drop_command,
         // images.rs commands
         crate::commands::images::download_image_to_project,
+        // git.rs commands
+        crate::commands::git::safe_git_pull,
+        crate::commands::git::list_pull_recoveries,
+        crate::commands::git::restore_pull_recovery,
+        crate::commands::git::delete_pull_recovery,
         // publish.rs commands
         crate::commands::publish::run_project_command,
         crate::commands::publish::start_review_server,

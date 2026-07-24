@@ -66,7 +66,6 @@ pub fn run() {
 
     tauri_builder
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_fs::init())
@@ -251,8 +250,6 @@ pub fn run() {
                 &[
                     &MenuItem::with_id(app, "about", "About Astro Editor", true, None::<&str>)?,
                     &PredefinedMenuItem::separator(app)?,
-                    &MenuItem::with_id(app, "check_updates", "Check for Updates...", true, None::<&str>)?,
-                    &PredefinedMenuItem::separator(app)?,
                     &MenuItem::with_id(app, "preferences", "Preferences...", true, Some("Cmd+,"))?,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::hide(app, Some("Hide Astro Editor"))?,
@@ -347,10 +344,6 @@ pub fn run() {
                             .blocking_show();
                     });
                 }
-                "check_updates" => {
-                    log::info!("Check for Updates menu item clicked");
-                    let _ = app.emit("menu-check-updates", ());
-                }
                 "preferences" => {
                     let _ = app.emit("menu-preferences", ());
                 }
@@ -422,6 +415,7 @@ pub fn run() {
                 }
             }
             tauri::RunEvent::Exit => {
+                commands::publish::stop_all_review_servers();
                 log::info!("Application exiting");
             }
             _ => {}

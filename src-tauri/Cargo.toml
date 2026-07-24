@@ -47,7 +47,8 @@ swc_ecma_visit = "23"
 dirs = "6"
 indexmap = { version = "2", features = ["serde"] }
 pathdiff = "0.2"
-reqwest = { version = "0.13", features = ["json"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
+rustix = { version = "1.1.4", features = ["fs"] }
 uuid = { version = "1.23", features = ["v4"] }
 tauri-plugin-os = "2.3.2"
 tauri-plugin-window-state = "2"

@@ -46,6 +46,7 @@ interface MockEditorState {
   updateCurrentFileAfterRename: Mock
   autoSaveCallback: ((showToast?: boolean) => Promise<void>) | null
   setAutoSaveCallback: Mock
+  isOperationLocked: boolean
 }
 
 describe('useEditorHandlers', () => {
@@ -74,6 +75,7 @@ describe('useEditorHandlers', () => {
       autoSaveCallback: null,
       setAutoSaveCallback: vi.fn(),
       isFrontmatterDirty: false,
+      isOperationLocked: false,
     }
 
     // Cast to unknown first to satisfy TypeScript when mocking store state
@@ -210,6 +212,18 @@ describe('useEditorHandlers', () => {
       expect(mockStoreState.saveFile).not.toHaveBeenCalled()
     })
 
+    it('should not start a blur save while a pull or publish is locked', () => {
+      mockStoreState.isDirty = true
+      mockStoreState.isOperationLocked = true
+      const { result } = renderHook(() => useEditorHandlers())
+
+      act(() => {
+        result.current.handleBlur()
+      })
+
+      expect(mockStoreState.saveFile).not.toHaveBeenCalled()
+    })
+
     it('should be stable across re-renders when store state changes', () => {
       const { result, rerender } = renderHook(() => useEditorHandlers())
       const firstHandler = result.current.handleBlur
@@ -266,6 +280,18 @@ describe('useEditorHandlers', () => {
       })
 
       expect(mockGetState).toHaveBeenCalled()
+      expect(mockStoreState.saveFile).not.toHaveBeenCalled()
+    })
+
+    it('should not start a manual save while a pull or publish is locked', () => {
+      mockStoreState.isDirty = true
+      mockStoreState.isOperationLocked = true
+      const { result } = renderHook(() => useEditorHandlers())
+
+      act(() => {
+        result.current.handleSave()
+      })
+
       expect(mockStoreState.saveFile).not.toHaveBeenCalled()
     })
 

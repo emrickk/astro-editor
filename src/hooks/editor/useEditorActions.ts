@@ -17,6 +17,19 @@ import { findOwningProjectPath } from '../../lib/deep-link'
 import { getSiblingCandidatePaths } from '../../lib/translations'
 import { ASTRO_PATHS } from '../../lib/constants'
 
+let activeEditorSave: Promise<void> | null = null
+
+function serializeEditorSave(operation: () => Promise<void>): Promise<void> {
+  if (activeEditorSave) return activeEditorSave
+
+  const save = Promise.resolve().then(operation)
+  const trackedSave = save.finally(() => {
+    if (activeEditorSave === trackedSave) activeEditorSave = null
+  })
+  activeEditorSave = trackedSave
+  return trackedSave
+}
+
 /**
  * Waits until the project store reflects `targetPath` as the active project with
  * its settings loaded. Resolves `false` if that doesn't happen within `timeoutMs`.
@@ -75,140 +88,158 @@ export function useEditorActions() {
   const queryClient = useQueryClient()
 
   const saveFile = useCallback(
-    async (showToast = true) => {
-      const {
-        currentFile,
-        editorContent,
-        frontmatter,
-        rawFrontmatter,
-        isFrontmatterDirty,
-        imports,
-      } = useEditorStore.getState()
-      if (!currentFile) return
-
-      // Get project path using direct store access pattern
-      const { projectPath } = useProjectStore.getState()
-
-      if (!projectPath) {
-        throw new Error('No project path available')
-      }
-
-      try {
-        // Get schema field order from collections data - NO EVENTS!
-        // Direct synchronous access to query cache
-        let schemaFieldOrder: string[] | null = null
-        if (currentFile) {
-          try {
-            const collections = queryClient.getQueryData<Collection[]>(
-              queryKeys.collections(projectPath)
-            )
-            if (collections && Array.isArray(collections)) {
-              const collection = collections.find(
-                (c: Collection) => c.name === currentFile.collection
-              )
-              const schema = collection?.complete_schema
-                ? deserializeCompleteSchema(collection.complete_schema)
-                : null
-              schemaFieldOrder = schema ? schema.fields.map(f => f.name) : null
-            }
-          } catch (error) {
-            // eslint-disable-next-line no-console
-            console.warn('Could not get schema field order:', error)
-          }
-        }
-
-        // Pass the frontmatter object only when it was edited. The raw block
-        // always goes along: it preserves formatting verbatim when untouched,
-        // and serves as the formatting template for the format-preserving
-        // merge when fields were edited.
-        const result = await commands.saveMarkdownContent(
-          currentFile.path,
-          isFrontmatterDirty
-            ? (frontmatter as Partial<Record<string, JsonValue>>)
-            : null,
-          rawFrontmatter,
+    (showToast = true) =>
+      serializeEditorSave(async () => {
+        const {
+          currentFile,
           editorContent,
+          frontmatter,
+          rawFrontmatter,
+          isFrontmatterDirty,
           imports,
-          schemaFieldOrder,
-          projectPath
-        )
-        if (result.status === 'error') {
-          throw new Error(result.error)
+        } = useEditorStore.getState()
+        if (!currentFile) return
+
+        // Get project path using direct store access pattern
+        const { projectPath } = useProjectStore.getState()
+
+        if (!projectPath) {
+          throw new Error('No project path available')
         }
 
-        // Clear auto-save timeout since we just saved
-        const { autoSaveTimeoutId } = useEditorStore.getState()
-        if (autoSaveTimeoutId) {
-          clearTimeout(autoSaveTimeoutId)
-          useEditorStore.setState({ autoSaveTimeoutId: null })
-        }
+        try {
+          // Get schema field order from collections data - NO EVENTS!
+          // Direct synchronous access to query cache
+          let schemaFieldOrder: string[] | null = null
+          if (currentFile) {
+            try {
+              const collections = queryClient.getQueryData<Collection[]>(
+                queryKeys.collections(projectPath)
+              )
+              if (collections && Array.isArray(collections)) {
+                const collection = collections.find(
+                  (c: Collection) => c.name === currentFile.collection
+                )
+                const schema = collection?.complete_schema
+                  ? deserializeCompleteSchema(collection.complete_schema)
+                  : null
+                schemaFieldOrder = schema
+                  ? schema.fields.map(f => f.name)
+                  : null
+              }
+            } catch (error) {
+              // eslint-disable-next-line no-console
+              console.warn('Could not get schema field order:', error)
+            }
+          }
 
-        // Only mark as clean if content hasn't changed during save (race condition protection)
-        // Check both content AND frontmatter to avoid dropping unsaved edits
-        const currentState = useEditorStore.getState()
-        const contentUnchanged = currentState.editorContent === editorContent
-        const frontmatterUnchanged =
-          JSON.stringify(currentState.frontmatter) ===
-          JSON.stringify(frontmatter)
+          // Pass the frontmatter object only when it was edited. The raw block
+          // always goes along: it preserves formatting verbatim when untouched,
+          // and serves as the formatting template for the format-preserving
+          // merge when fields were edited.
+          const result = await commands.saveMarkdownContent(
+            currentFile.path,
+            isFrontmatterDirty
+              ? (frontmatter as Partial<Record<string, JsonValue>>)
+              : null,
+            rawFrontmatter,
+            editorContent,
+            imports,
+            schemaFieldOrder,
+            projectPath
+          )
+          if (result.status === 'error') {
+            throw new Error(result.error)
+          }
 
-        useEditorStore.setState({
-          isDirty: !contentUnchanged || !frontmatterUnchanged,
-          isFrontmatterDirty:
-            currentState.isFrontmatterDirty || !frontmatterUnchanged,
-          lastSaveTimestamp: Date.now(),
-        })
+          // Clear auto-save timeout since we just saved
+          const { autoSaveTimeoutId } = useEditorStore.getState()
+          if (autoSaveTimeoutId) {
+            clearTimeout(autoSaveTimeoutId)
+            useEditorStore.setState({ autoSaveTimeoutId: null })
+          }
 
-        // Invalidate queries to update UI
-        if (projectPath) {
-          // Invalidate file content query to refresh cached content
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.fileContent(projectPath, currentFile.id),
+          // Only mark as clean if content hasn't changed during save (race condition protection)
+          // Check both content AND frontmatter to avoid dropping unsaved edits
+          const currentState = useEditorStore.getState()
+          const contentUnchanged = currentState.editorContent === editorContent
+          const frontmatterUnchanged =
+            JSON.stringify(currentState.frontmatter) ===
+            JSON.stringify(frontmatter)
+
+          useEditorStore.setState({
+            isDirty: !contentUnchanged || !frontmatterUnchanged,
+            isFrontmatterDirty:
+              currentState.isFrontmatterDirty || !frontmatterUnchanged,
+            lastSaveTimestamp: Date.now(),
           })
 
-          // Invalidate directory scans for this collection (root + all subdirectories)
-          if (currentFile.collection) {
+          // Invalidate queries to update UI
+          if (projectPath) {
+            // Invalidate file content query to refresh cached content
             void queryClient.invalidateQueries({
-              queryKey: [
-                ...queryKeys.all,
-                projectPath,
-                currentFile.collection,
-                'directory',
-              ],
+              queryKey: queryKeys.fileContent(projectPath, currentFile.id),
             })
+
+            // Invalidate directory scans for this collection (root + all subdirectories)
+            if (currentFile.collection) {
+              void queryClient.invalidateQueries({
+                queryKey: [
+                  ...queryKeys.all,
+                  projectPath,
+                  currentFile.collection,
+                  'directory',
+                ],
+              })
+            }
           }
+
+          // Show success toast only if requested
+          if (showToast) {
+            toast.success('File saved successfully')
+          }
+        } catch (error) {
+          const saveError =
+            error instanceof Error
+              ? error
+              : new Error('Unknown error occurred while saving')
+          toast.error('Save failed', {
+            description: `Could not save file: ${saveError.message}. Recovery data has been saved.`,
+          })
+
+          // Recovery is best-effort. A secondary recovery failure must never
+          // hide the original save failure from callers that need to stop a
+          // switch, pull, or publish.
+          try {
+            await logError(`Save failed: ${String(error)}`)
+            await info('Attempting to save recovery data...')
+
+            const state = useEditorStore.getState()
+            await saveRecoveryData({
+              currentFile: state.currentFile,
+              projectPath,
+              editorContent: state.editorContent,
+              frontmatter: state.frontmatter,
+            })
+
+            await saveCrashReport(saveError, {
+              currentFile: state.currentFile?.path,
+              projectPath: projectPath || undefined,
+              action: 'save',
+            })
+          } catch (recoveryError) {
+            try {
+              await logError(`Save recovery failed: ${String(recoveryError)}`)
+            } catch {
+              // Logging is also best-effort; preserve the original save error.
+            }
+          }
+
+          // Keep the file marked as dirty since save failed
+          useEditorStore.setState({ isDirty: true })
+          throw saveError
         }
-
-        // Show success toast only if requested
-        if (showToast) {
-          toast.success('File saved successfully')
-        }
-      } catch (error) {
-        toast.error('Save failed', {
-          description: `Could not save file: ${error instanceof Error ? error.message : 'Unknown error occurred'}. Recovery data has been saved.`,
-        })
-        await logError(`Save failed: ${String(error)}`)
-        await info('Attempting to save recovery data...')
-
-        // Save recovery data
-        const state = useEditorStore.getState()
-        await saveRecoveryData({
-          currentFile: state.currentFile,
-          projectPath,
-          editorContent: state.editorContent,
-          frontmatter: state.frontmatter,
-        })
-
-        // Save crash report
-        await saveCrashReport(error as Error, {
-          currentFile: state.currentFile?.path,
-          projectPath: projectPath || undefined,
-          action: 'save',
-        })
-
-        // Keep the file marked as dirty since save failed
-        useEditorStore.setState({ isDirty: true })
-      }
-    },
+      }),
     [queryClient]
   )
 
